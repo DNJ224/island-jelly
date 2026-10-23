@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#ece9e3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="果冻海岛">
+<title>果冻海岛</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<style>
+:root{--paper:#ece9e3;--ink:#241f1d;--ink-2:#5b544e;--ink-3:#958c84;--rule:#d5d0c8;--glass:rgba(247,245,241,.86);--accent:#178a8a;--button:#352b29;--serif:'Iowan Old Style','Palatino Linotype',Palatino,'Songti SC',STSong,Georgia,serif;--sans:-apple-system,BlinkMacSystemFont,'PingFang SC','Hiragino Sans GB','Noto Sans SC','Segoe UI',sans-serif;--mono:ui-monospace,SFMono-Regular,Consolas,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--paper);color:var(--ink);font-family:var(--sans);touch-action:none;position:fixed;inset:0}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;touch-action:manipulation}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+#world{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+#world.is-pick{cursor:grab}#world.is-water{cursor:crosshair}#world.is-tilt{cursor:move}#world.is-dragging{cursor:grabbing}
+.masthead,.footer{position:fixed;pointer-events:none;z-index:2}
+.masthead{left:max(42px,env(safe-area-inset-left));top:max(37px,env(safe-area-inset-top));max-width:310px}
+.eyebrow{text-transform:uppercase;font-size:10px;letter-spacing:.22em;font-weight:500;color:var(--ink-2)}
+h1{font:italic 400 clamp(56px,8.4vw,116px)/.90 var(--serif);letter-spacing:-.065em;margin:26px 0 0}
+h1 .second{padding-left:.035em}
+.rule{height:1px;width:42px;background:var(--ink-3);margin:28px 0 19px}
+.caption{font-size:12px;line-height:1.7;color:var(--ink-2);max-width:212px;margin:0}
+.edition{font:9px var(--mono);letter-spacing:.13em;color:var(--ink-3);margin-top:25px}
+.status{position:fixed;top:max(34px,env(safe-area-inset-top));right:max(34px,env(safe-area-inset-right));z-index:4;display:flex;align-items:center;gap:9px;pointer-events:auto;border:1px solid rgba(122,113,102,.17);background:rgba(249,247,243,.62);backdrop-filter:blur(16px);border-radius:25px;padding:10px 14px;font-size:10px;color:var(--ink-2);letter-spacing:.015em}
+.status .dot{width:6px;height:6px;border-radius:50%;background:#238d78;box-shadow:0 0 0 3px #238d7810}
+.status.paused .dot{background:#b9924d;box-shadow:none;opacity:.65}
+.status.unavailable .dot{background:#b55142;box-shadow:none}
+.panel{position:fixed;right:34px;top:100px;width:268px;background:var(--glass);border:1px solid rgba(255,255,255,.70);border-radius:18px;box-shadow:0 16px 45px rgba(47,39,30,.06),0 1px 4px rgba(47,39,30,.03);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);z-index:3;pointer-events:auto;max-height:calc(100dvh - 138px);overflow:auto;touch-action:pan-y}
+.panel-content{padding:22px;touch-action:pan-y}
+.section-label{text-transform:uppercase;letter-spacing:.18em;font-size:9px;font-weight:500;color:var(--ink-3);margin:0 0 13px}
+.drop-row{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.dark{padding:12px 7px;border:0;border-radius:7px;background:var(--button);color:#f5f1e8;font-size:10px;white-space:nowrap;transition:background .15s,transform .15s}
+.dark:hover{background:#4a3c39}.dark:active{transform:translateY(1px)}
+.meter{height:2px;background:#c5d5cc77;margin:19px 0 13px;overflow:hidden}
+.meter span{height:100%;width:0;background:var(--accent);display:block}
+.tally{display:flex;align-items:center;justify-content:space-between;color:var(--ink-3);font-size:10px;white-space:nowrap}
+.tally b{font:400 10px var(--mono);color:var(--ink-2);margin-left:3px}
+.tally .sep{color:#b6aea4}
+.section{border-top:1px solid var(--rule);margin-top:22px;padding-top:20px}
+.swatches{display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px}
+.swatch{border:1px solid transparent;background:none;color:var(--ink-3);border-radius:8px;padding:8px 2px 7px;font-size:9px;display:flex;flex-direction:column;align-items:center;gap:9px;transition:background .15s,border-color .15s}
+.swatch[aria-pressed=true]{border-color:#bcb6a8;background:#ffffff3d;color:var(--ink)}
+.swatch:hover{background:#ffffff50}
+.swatch i{display:block;width:31px;height:31px;border-radius:50%;box-shadow:inset 0 0 0 1px #ffffff45,0 2px 5px #221b1514}
+.swatch[data-flavour="0"] i{background:radial-gradient(circle at 30% 25%,#b8f4ee,#2bb5b0 58%,#0d6f73)}
+.swatch[data-flavour="1"] i{background:radial-gradient(circle at 30% 25%,#ffc6d6,#e2477a 58%,#93184a)}
+.swatch[data-flavour="2"] i{background:radial-gradient(circle at 30% 25%,#efffb0,#a6d33a 58%,#5b8a12)}
+.slider{margin-bottom:22px}.slider:last-child{margin-bottom:0}
+.slider label{display:flex;justify-content:space-between;align-items:baseline;color:var(--ink-2);font-size:11px;margin-bottom:12px}
+.slider output{font:10px var(--mono);color:var(--ink-3)}
+input[type=range]{display:block;width:100%;height:16px;margin:0;appearance:none;background:transparent;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:1px;background:#bfb7ad}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:12px;height:12px;margin-top:-5.5px;border:1px solid #b8aea0;border-radius:50%;background:#f6f2e9;box-shadow:0 1px 2px #352b2914}
+input[type=range]::-moz-range-track{height:1px;background:#bfb7ad;border:0}
+input[type=range]::-moz-range-thumb{width:11px;height:11px;border:1px solid #b8aea0;border-radius:50%;background:#f6f2e9}
+.bottom-row{display:grid;grid-template-columns:.85fr .9fr 1.2fr;gap:6px}
+.outline{border:1px solid #c9c1b6;border-radius:6px;background:none;padding:10px 3px;color:var(--ink-2);font-size:10px}
+.outline:hover{background:#ffffff65;border-color:#a79b8b}
+.outline[aria-pressed=true]{background:#ded8cc}
+.tilt-row{margin-top:8px}
+.tilt-row .outline{width:100%}
+.sheet-handle{display:none}
+.footer{left:max(42px,env(safe-area-inset-left));bottom:max(34px,env(safe-area-inset-bottom));right:350px}
+.footer .tagline{font:italic 20px/1.3 var(--serif);margin:9px 0 11px;letter-spacing:-.015em}
+.footer .howto{max-width:740px;color:var(--ink-3);font-size:10px;line-height:1.65;margin:0}
+.footer .eyebrow{font-size:9px;color:var(--ink-3)}
+#loading{position:fixed;inset:0;z-index:7;display:grid;place-content:center;text-align:center;background:var(--paper);transition:opacity .35s;pointer-events:none}
+#loading h2{font:italic 38px var(--serif);margin:0 0 18px}
+#loading p{font:9px var(--mono);color:var(--ink-3);letter-spacing:.15em}
+.fallback{position:fixed;inset:0;z-index:10;display:grid;place-content:center;text-align:left;padding:35px;background:var(--paper)}
+.fallback[hidden]{display:none}
+.fallback>div{max-width:460px}
+.fallback h2{font:italic 56px var(--serif);letter-spacing:-.04em;margin:20px 0}
+.fallback p{color:var(--ink-2);font-size:14px;line-height:1.8}
+@media(min-width:901px) and (max-height:700px){
+  .masthead{top:28px;left:30px}h1{font-size:80px;margin-top:20px}.rule{margin:20px 0 14px}.edition{display:none}
+  .panel{top:85px;max-height:calc(100dvh - 110px);right:25px}.panel-content{padding:17px}
+  .section{margin-top:15px;padding-top:15px}.slider{margin-bottom:15px}
+  .footer{bottom:23px;left:30px}.footer .howto{display:none}.status{top:25px;right:25px}
+}
+@media(max-width:900px){
+  .masthead{left:max(23px,env(safe-area-inset-left));top:max(25px,env(safe-area-inset-top));max-width:220px}
+  h1{font-size:clamp(40px,13vw,58px);margin-top:18px;letter-spacing:-.055em}
+  .eyebrow{font-size:9px}.rule{margin:19px 0 12px;width:30px}
+  .caption{font-size:10px;max-width:187px;line-height:1.6}.edition{display:none}
+  .status{right:max(20px,env(safe-area-inset-right));top:max(24px,env(safe-area-inset-top));font-size:9px;padding:9px 11px;gap:7px}
+  .status .dot{width:5px;height:5px}
+  .panel{top:auto;right:0;left:0;bottom:0;width:100%;max-height:62dvh;border-radius:20px 20px 0 0;transform:translateY(calc(100% - 54px - env(safe-area-inset-bottom)));transition:transform .30s;overflow:hidden;box-shadow:0 -8px 40px #332b2110}
+  .panel.open{transform:translateY(0)}
+  .sheet-handle{display:flex;align-items:center;justify-content:space-between;width:100%;height:54px;padding:0 24px;background:none;border:0;border-radius:20px 20px 0 0;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2)}
+  .sheet-handle i{display:block;width:30px;height:3px;border-radius:3px;background:#bfb5a8}
+  .panel-content{padding:2px 24px calc(20px + env(safe-area-inset-bottom));max-height:calc(62dvh - 54px);overflow:auto}
+  .section{padding-top:16px;margin-top:17px}.slider{margin-bottom:18px}
+  .swatch{flex-direction:row;justify-content:center;padding:9px 3px;gap:9px}.swatch i{width:25px;height:25px}
+  .dark{font-size:11px;min-height:44px}.outline{font-size:11px;min-height:44px}
+  .footer{left:max(23px,env(safe-area-inset-left));right:max(23px,env(safe-area-inset-right));bottom:calc(80px + env(safe-area-inset-bottom))}
+  .footer .tagline{font-size:17px;max-width:285px;line-height:1.4;margin-bottom:0}.footer .howto{display:none}
+  .sheet-open .caption,.sheet-open .footer,.sheet-open .masthead .rule{visibility:hidden}
+}
+@media(max-width:900px) and (max-height:480px){
+  .caption,.footer,.masthead .rule{display:none}
+  h1{font-size:34px;margin-top:14px}.masthead{top:18px;left:20px}.status{top:17px}
+  .panel{max-height:62dvh}.panel-content{max-height:calc(62dvh - 54px)}
+}
+@media(pointer:coarse){
+  input[type=range]{height:28px}
+  input[type=range]::-webkit-slider-thumb{width:22px;height:22px;margin-top:-10.5px}
+  input[type=range]::-moz-range-thumb{width:22px;height:22px}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<canvas id="world" aria-label="可以搅动、倾斜、并往里面扔东西的果冻海岛"></canvas>
+<header class="masthead">
+  <div class="eyebrow">材质研究</div>
+  <h1>果冻<br><span class="second">海岛。</span></h1>
+  <div class="rule"></div>
+  <p class="caption">沙洲、三棵棕榈，和会弹回来的海。</p>
+  <div class="edition">一小片世界，轻轻凝固</div>
+</header>
+<div class="status" id="status" role="status"><span class="dot"></span><span id="status-text">准备中</span></div>
+<aside class="panel" id="panel" aria-label="果冻海岛控制">
+  <button class="sheet-handle" id="sheet-handle" aria-expanded="false" aria-controls="panel-content"><span>控制</span><i aria-hidden="true"></i></button>
+  <div class="panel-content" id="panel-content">
+    <section>
+      <h2 class="section-label">海面</h2>
+      <div class="drop-row">
+        <button class="dark" id="drop-pebble">投入卵石</button>
+        <button class="dark" id="drop-coconut">投入椰子</button>
+      </div>
+      <div class="meter" role="meter" aria-label="海面活跃度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="energy-bar"></span></div>
+      <div class="tally" aria-live="polite"><span>漂浮 <b id="afloat">0</b></span><span class="sep">·</span><span>沉底 <b id="sunk">0</b></span><span class="sep">·</span><span>岸上 <b id="ashore">0</b></span></div>
+    </section>
+    <section class="section">
+      <h2 class="section-label">口味</h2>
+      <div class="swatches">
+        <button class="swatch" data-flavour="0" aria-pressed="true"><i aria-hidden="true"></i>潟湖</button>
+        <button class="swatch" data-flavour="1" aria-pressed="false"><i aria-hidden="true"></i>树莓</button>
+        <button class="swatch" data-flavour="2" aria-pressed="false"><i aria-hidden="true"></i>青柠</button>
+      </div>
+    </section>
+    <section class="section">
+      <div class="slider"><label for="firmness">硬度 <output id="firmness-value">50</output></label><input id="firmness" type="range" min="0" max="100" value="50"></div>
+      <div class="slider"><label for="damping">波浪阻尼 <output id="damping-value">30</output></label><input id="damping" type="range" min="0" max="100" value="30"></div>
+      <div class="slider"><label for="tide">潮汐 <output id="tide-value">0 cm</output></label><input id="tide" type="range" min="-100" max="100" value="0"></div>
+    </section>
+    <section class="section">
+      <div class="bottom-row">
+        <button class="outline" id="reset">重置</button>
+        <button class="outline" id="pause" aria-pressed="false">暂停</button>
+        <button class="outline" id="reset-view">重置视角</button>
+      </div>
+      <div class="tilt-row"><button class="outline" id="device-tilt" aria-pressed="false">设备倾斜</button></div>
+    </section>
+  </div>
+</aside>
+<footer class="footer">
+  <div class="eyebrow">怎么玩</div>
+  <p class="tagline">搅动海面。倾斜果冻。扔一颗椰子。</p>
+  <p class="howto">单指划过水面起浪 · 拖果冻的侧面，或双指拖动来倾斜，看海面晃向低处 · 拿起椰子或卵石扔进去 · 拖空白处或右键环绕 · 滚轮或双指捏合缩放</p>
+</footer>
+<div id="loading"><h2>海面正在凝固。</h2><p>准备小岛</p></div>
+<div class="fallback" id="fallback" hidden>
+  <div>
+    <div class="eyebrow">材质研究</div>
+    <h2>果冻海岛。</h2>
+    <p>这个浏览器似乎既没有可用的 WebGPU，也没有可用的 WebGL。请换用较新的系统，并打开硬件加速。</p>
+  </div>
+</div>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
