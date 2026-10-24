@@ -302,6 +302,115 @@ await deskPage.screenshot({ path: `${shots}/case-desktop-reveal.png` });
 check('desktop console', deskLogs.length === 0, deskLogs.join(' | '));
 await desk.close();
 
+const funContext = await browser.newContext({
+  viewport: phone,
+  deviceScaleFactor: 2,
+  hasTouch: true,
+  isMobile: true,
+});
+const funPage = await funContext.newPage();
+const funLogs = watch(funPage);
+funPage.on('dialog', (dialog) => {
+  check('reset asks before clearing', dialog.message() === '重置当前账本？');
+  dialog.accept();
+});
+await funPage.goto(base, { waitUntil: 'domcontentloaded' });
+await funPage.waitForFunction(() => window.__case && window.__case.ready, null, { timeout: 15000 });
+const funSetup = await funPage.evaluate(() => {
+  const real = document.getElementById('mode-real');
+  const funBtn = document.getElementById('mode-fun');
+  const slider = document.getElementById('gold-rate');
+  return {
+    opens: document.querySelectorAll('#open').length,
+    openText: document.getElementById('open').textContent,
+    realPressed: real.getAttribute('aria-pressed'),
+    funPressed: funBtn.getAttribute('aria-pressed'),
+    controlsHidden: document.getElementById('fun-controls').hidden,
+    badgeHidden: document.getElementById('fun-badge-open').hidden,
+    stageHidden: document.getElementById('fun-badge-stage').hidden,
+    realH: real.getBoundingClientRect().height,
+    funH: funBtn.getBoundingClientRect().height,
+    sliderH: slider.getBoundingClientRect().height,
+    label: document.querySelector('.odds-label')?.textContent || '',
+    gear: document.querySelectorAll('[aria-label="设置"], .settings, #settings').length,
+  };
+});
+check('odds row is on the preview and real mode is the default', funSetup.opens === 1 && funSetup.openText === '开启武器箱' && funSetup.realPressed === 'true' && funSetup.funPressed === 'false' && funSetup.controlsHidden && funSetup.badgeHidden && funSetup.stageHidden && funSetup.label === '概率设置' && funSetup.gear === 0, JSON.stringify(funSetup));
+check('mode buttons are 44px', funSetup.realH >= 44 && funSetup.funH >= 44, JSON.stringify(funSetup));
+await funPage.click('#btn-fast');
+await funPage.click('#open');
+await funPage.waitForFunction(() => {
+  const reveal = document.getElementById('reveal');
+  return reveal && !reveal.hidden && document.getElementById('reveal-price').textContent.includes('¥');
+}, null, { timeout: 12000 });
+await funPage.click('#back');
+await funPage.click('#mode-fun');
+const switched = await funPage.evaluate(() => ({
+  fun: window.__case.fun,
+  opens: document.getElementById('stat-opens').textContent,
+  controls: document.getElementById('fun-controls').hidden,
+  badge: document.getElementById('fun-badge-open').hidden,
+  sliderH: document.getElementById('gold-rate').getBoundingClientRect().height,
+}));
+check('fun ledger starts separate from real', switched.fun === true && switched.opens === '0' && switched.controls === false && switched.badge === false && switched.sliderH >= 44, JSON.stringify(switched));
+await funPage.evaluate(() => {
+  const slider = document.getElementById('gold-rate');
+  slider.value = '12.5';
+  slider.dispatchEvent(new Event('input', { bubbles: true }));
+});
+const live = await funPage.evaluate(() => ({
+  rate: window.__case.goldRate,
+  label: document.getElementById('gold-rate-label').textContent,
+  percents: document.getElementById('fun-percents').textContent,
+  note: document.getElementById('odds-note').textContent,
+}));
+check('gold slider republishes the other tiers', live.rate === 12.5 && live.label === '12.5%' && live.percents === '隐秘 9.21% · 保密 18.42% · 受限 27.63% · 军规级 32.24%' && live.note.includes('非真实概率') && live.note.includes('12.50%') && live.note.includes('磨损在范围内均匀分布，简化处理'), JSON.stringify(live));
+await funPage.screenshot({ path: `${shots}/case-fun-phone.png` });
+await funPage.setViewportSize({ width: 1280, height: 800 });
+await funPage.screenshot({ path: `${shots}/case-fun-desktop.png` });
+await funPage.setViewportSize(phone);
+await funPage.click('#open');
+await funPage.waitForFunction(() => {
+  const reveal = document.getElementById('reveal');
+  const badge = document.getElementById('fun-badge-stage');
+  return reveal && !reveal.hidden && badge && badge.hidden === false && document.getElementById('reveal-price').textContent.includes('¥');
+}, null, { timeout: 12000 });
+await funPage.click('#back');
+await funPage.click('#btn-ledger');
+await funPage.waitForSelector('#ledger-dlg[open]');
+const funLedger = await funPage.evaluate(() => ({
+  text: document.getElementById('ledger-dlg').innerText,
+  resetH: document.getElementById('reset-ledger').getBoundingClientRect().height,
+  opens: document.getElementById('stat-opens').textContent,
+  rate: document.getElementById('stat-return').textContent,
+}));
+check('fun ledger shows this mode only', funLedger.opens === '1' && funLedger.rate !== '—' && funLedger.text.includes('非真实概率') && funLedger.text.includes('当前：娱乐模式') && funLedger.text.includes('参考价：BUFF 在售最低价（csgotrader 数据，2026-10-24）') && funLedger.resetH >= 44, JSON.stringify({ opens: funLedger.opens, rate: funLedger.rate, resetH: funLedger.resetH }));
+await funPage.screenshot({ path: `${shots}/case-fun-ledger.png` });
+await funPage.click('#reset-ledger');
+const afterReset = await funPage.evaluate(() => ({
+  opens: document.getElementById('stat-opens').textContent,
+  recovered: document.getElementById('stat-recovered').textContent,
+  rate: document.getElementById('stat-return').textContent,
+  gold: document.getElementById('gold-rate').value,
+  key: document.getElementById('key-price').value,
+}));
+check('reset clears only the fun ledger', afterReset.opens === '0' && afterReset.recovered === '¥0.00' && afterReset.rate === '—' && afterReset.gold === '12.5' && afterReset.key === '17.00', JSON.stringify(afterReset));
+await funPage.click('#ledger-close');
+await funPage.click('#mode-real');
+const realKept = await funPage.evaluate(() => document.getElementById('stat-opens').textContent);
+check('real ledger survives the fun reset', realKept === '1', realKept);
+await funPage.reload({ waitUntil: 'domcontentloaded' });
+await funPage.waitForFunction(() => window.__case && window.__case.ready, null, { timeout: 15000 });
+const persisted = await funPage.evaluate(() => ({
+  fun: window.__case.fun,
+  rate: window.__case.goldRate,
+  realOpens: JSON.parse(localStorage.getItem('dn-case-v1')).real.opens,
+  funOpens: JSON.parse(localStorage.getItem('dn-case-v1')).funLedger.opens,
+}));
+check('mode and slider persist, ledgers stay apart', persisted.fun === false && persisted.rate === 12.5 && persisted.realOpens === 1 && persisted.funOpens === 0, JSON.stringify(persisted));
+check('fun console', funLogs.length === 0, funLogs.join(' | '));
+await funContext.close();
+
 await browser.close();
 if (failures.length) {
   console.error(`FAILED\n${failures.join('\n')}`);

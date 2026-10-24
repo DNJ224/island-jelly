@@ -27,6 +27,22 @@
     </header>
 
     <section id="preview">
+      <div class="odds-setup" id="odds-setup">
+        <div class="odds-row">
+          <span class="odds-label">概率设置</span>
+          <div class="seg" role="group" aria-label="概率设置">
+            <button type="button" id="mode-real" aria-pressed="true">真实</button>
+            <button type="button" id="mode-fun" aria-pressed="false">娱乐</button>
+          </div>
+        </div>
+        <div id="fun-controls" hidden>
+          <label class="gold-slider">
+            <span>金色 <b id="gold-rate-label">5%</b></span>
+            <input id="gold-rate" type="range" min="1" max="50" step="0.5" value="5" aria-label="金色概率">
+          </label>
+          <p id="fun-percents" class="fine"></p>
+        </div>
+      </div>
       <div class="preview-h">
         <h2>包含以下物品之一</h2>
         <button type="button" id="btn-inspect">检视物品</button>
@@ -34,12 +50,14 @@
       <p class="fine pad" id="odds-note"></p>
       <div id="grid" class="grid"></div>
       <div class="open-bar">
+        <p class="fun-badge" id="fun-badge-open" hidden>非真实概率</p>
         <button type="button" id="open">开启武器箱</button>
         <p class="fine center">模拟开箱，不消耗真实钥匙 · <a class="home-link" href="../">果冻海岛</a></p>
       </div>
     </section>
 
     <section id="stage" hidden>
+      <p class="fun-badge stage-badge" id="fun-badge-stage" hidden>非真实概率</p>
       <div class="rays" aria-hidden="true"></div>
       <div class="flash" aria-hidden="true"></div>
       <div class="reel-wrap">
@@ -61,6 +79,7 @@
         <h2 id="reveal-zh"></h2>
         <p id="reveal-en" class="en"></p>
         <p id="reveal-wear"></p>
+        <p id="reveal-price"></p>
         <p id="reveal-float" class="mono"></p>
         <div class="floatbar" aria-hidden="true">
           <span class="fn"></span>
@@ -97,14 +116,18 @@
         <h2>概率账本</h2>
         <button type="button" id="ledger-close" class="ghost">关闭</button>
       </div>
+      <p class="fun-badge" id="fun-badge-ledger" hidden>非真实概率</p>
+      <p class="fine" id="ledger-mode">当前：真实模式</p>
       <div class="stats">
         <div><span>已开箱</span><strong id="stat-opens">0</strong></div>
         <div><span>累计花费</span><strong id="stat-spent">¥0.00</strong></div>
         <div><span>回收价值</span><strong id="stat-recovered">¥0.00</strong></div>
         <div><span>净亏</span><strong id="stat-net">¥0.00</strong></div>
+        <div><span>回本率</span><strong id="stat-return">—</strong></div>
         <div><span>出金次数</span><strong id="stat-golds">0</strong></div>
         <div><span>首次出金</span><strong id="stat-gold">尚未开出</strong></div>
       </div>
+      <p class="fine note" id="price-source">参考价：BUFF 在售最低价（csgotrader 数据，2026-10-24）</p>
       <div class="prices">
         <label>
           <span class="price-k">钥匙 <b>¥17.00</b></span>
@@ -121,11 +144,11 @@
       <p class="fine" id="next-cost"></p>
       <p class="fine" id="expect-cost"></p>
       <h3>物品参考价</h3>
-      <p class="fine note">默认留空，不计入回收。填上之后按这个参考价乘以已开出的件数重算。0 表示这件按 0 计。</p>
+      <p class="fine note">手填单价只留在这本账上，不改回收价值。回收价值按每次开出时的 BUFF 参考价累加，估出来的也算，并且不受最近 200 条记录的上限影响。</p>
       <div id="price-book"></div>
       <h3>最近掉落</h3>
       <ol id="history" class="history"></ol>
-      <button type="button" id="clear-ledger">清空账本</button>
+      <button type="button" id="reset-ledger">一键重置</button>
     </div>
   </dialog>
 
