@@ -4,6 +4,8 @@
 
 在线地址：<https://dnj224.github.io/island-jelly/>
 
+梦魇武器箱开箱模拟在 <https://dnj224.github.io/island-jelly/case/> 。
+
 ## 怎么玩
 
 - 单指划过水面起浪。
