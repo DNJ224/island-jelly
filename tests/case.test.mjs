@@ -25,19 +25,8 @@ import {
   uiColor,
   wearOf,
 } from '../case/roll.js';
-import { blankLedger, recordDrop, recoveredOf, resetCurrent, splitLedgers } from '../case/ledger.js';
-import {
-  OPEN_COST,
-  PRICE_SOURCE,
-  buildPrices,
-  cellKey,
-  expectedOpenValue,
-  fillEstimates,
-  mapRows,
-  median,
-  normalizeName,
-  parseCsv,
-} from '../case/prices.js';
+import { blankLedger, netOf, recordDrop, recoveredOf, resetCurrent, returnRate, settleOpen, splitLedgers } from '../case/ledger.js';
+import { OPEN_COST, PRICE_SOURCE, PHASE_CODES, WEAR_CODES, emptyPriceBook, lookupPrice, wearCodeOf } from '../case/prices.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'case');
 const manifest = JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8'));
@@ -320,7 +309,7 @@ const funReel = buildReel(cat, funWinner, 48, 30, { fun: true, goldPercent: 50 }
 assert.equal(funReel.filter((drop) => drop.tier === 'rare_special').length, 0);
 assert.equal(funWinner.tier, 'milspec');
 
-const pricedRow = (value, estimated = false, tier = 'milspec') => ({
+const pricedRow = (value, tier = 'milspec') => ({
   itemId: 'skin',
   tier,
   color: '#fff',
@@ -329,7 +318,6 @@ const pricedRow = (value, estimated = false, tier = 'milspec') => ({
   floatText: '0.0100',
   cost: 22.5,
   value,
-  estimated,
 });
 let realLedger = blankLedger();
 for (let i = 0; i < 201; i += 1) realLedger = recordDrop(realLedger, pricedRow(1));
@@ -337,8 +325,8 @@ assert.equal(realLedger.history.length, 200);
 assert.equal(realLedger.opens, 201);
 assert.equal(realLedger.recovered, 201);
 assert.equal(recoveredOf(realLedger), 201);
-const funLedger = recordDrop(blankLedger(), pricedRow(9, true, 'rare_special'));
-assert.equal(funLedger.history[0].estimated, true);
+const funLedger = recordDrop(blankLedger(), pricedRow(9, 'rare_special'));
+assert.equal(funLedger.history[0].profit, 9 - 22.5);
 assert.equal(funLedger.goldCount, 1);
 const manualPrices = { skin: 100 };
 const ledgers = {
@@ -386,140 +374,129 @@ assert.equal(nested.funLedger.opens, 3);
 assert.equal(nested.fun, true);
 assert.equal(nested.goldRate, 7);
 
-assert.equal(normalizeName('★ Bowie Knife | Gamma Doppler'), 'Bowie Knife | Gamma Doppler');
-assert.equal(normalizeName('  ★   Five-SeveN   |   Scrawl '), 'Five-SeveN | Scrawl');
-assert.equal(median([1, 2, 3, 4]), 2.5);
-assert.equal(median([3]), 3);
+const bounds = [
+  [0, 'FN', 'fn'],
+  [0.069999, 'FN', 'fn'],
+  [0.07, 'MW', 'mw'],
+  [0.149999, 'MW', 'mw'],
+  [0.15, 'FT', 'ft'],
+  [0.379999, 'FT', 'ft'],
+  [0.38, 'WW', 'ww'],
+  [0.449999, 'WW', 'ww'],
+  [0.45, 'BS', 'bs'],
+  [1, 'BS', 'bs'],
+];
+for (const [floatValue, code, id] of bounds) {
+  assert.equal(wearCodeOf(floatValue), code, String(floatValue));
+  assert.equal(wearOf(floatValue).id, id, String(floatValue));
+}
 
-const wearDoc = fillEstimates(
-  { items: [{ id: 'a', name_en: 'Test | Skin', tier: 'milspec', float_min: 0, float_max: 1 }] },
-  {
-    items: {
-      a: {
-        [cellKey('fn', false, '')]: { raw: 10, value: 10, estimated: false },
-        [cellKey('mw', false, '')]: { raw: null, value: null, estimated: false },
-        [cellKey('ft', false, '')]: { raw: null, value: null, estimated: false },
-        [cellKey('ww', false, '')]: { raw: 4, value: 4, estimated: false },
-      },
-    },
-  },
-);
-assert.equal(wearDoc.items.a[cellKey('mw', false, '')].value, 10);
-assert.equal(wearDoc.items.a[cellKey('mw', false, '')].method, 'wear');
-assert.equal(wearDoc.items.a[cellKey('ft', false, '')].value, 4);
-assert.equal(wearDoc.items.a[cellKey('ft', false, '')].method, 'wear');
+assert.equal(settleOpen(30, OPEN_COST).profit, 30 - OPEN_COST);
+assert.equal(settleOpen(OPEN_COST, OPEN_COST).profit, 0);
+assert.equal(settleOpen(1, OPEN_COST).profit, 1 - OPEN_COST);
+assert.equal(settleOpen(null, OPEN_COST).profit, null);
+assert.equal(settleOpen(null, OPEN_COST).unknown, true);
+assert.equal(OPEN_COST, 5.5 + 17);
 
-const knifeMeta = {
-  items: [
-    { id: 'a', name_en: '★ Bowie Knife | Gamma Doppler', tier: 'rare_special', float_min: 0, float_max: 0.08 },
-    { id: 'b', name_en: '★ Falchion Knife | Lore', tier: 'rare_special', float_min: 0, float_max: 1 },
-  ],
+const known = {
+  itemId: 'skin-known',
+  tier: 'milspec',
+  color: '#4b69ff',
+  zh: '已知',
+  wear: '崭新出厂',
+  stattrak: true,
+  phase: '相位 2',
+  floatText: '0.0100',
+  cost: OPEN_COST,
+  value: 30,
 };
-const ratioDoc = fillEstimates(knifeMeta, {
-  items: {
-    a: {
-      [cellKey('mw', false, 'Phase 1')]: { raw: 100, value: 100, estimated: false },
-      [cellKey('mw', true, 'Phase 1')]: { raw: 300, value: 300, estimated: false },
-      [cellKey('mw', false, 'Phase 2')]: { raw: 200, value: 200, estimated: false },
-      [cellKey('mw', true, 'Phase 2')]: { raw: null, value: null, estimated: false },
-    },
-    b: {},
-  },
-});
-assert.equal(ratioDoc.items.a[cellKey('mw', true, 'Phase 2')].value, 600);
-assert.equal(ratioDoc.items.a[cellKey('mw', true, 'Phase 2')].method, 'stattrak');
+const unknown = {
+  itemId: 'skin-unknown',
+  tier: 'covert',
+  color: '#eb4b4b',
+  zh: '未知',
+  wear: '久经沙场',
+  stattrak: false,
+  phase: null,
+  floatText: '0.2000',
+  cost: OPEN_COST,
+  value: null,
+};
+let mixed = recordDrop(blankLedger(), known);
+mixed = recordDrop(mixed, unknown);
+assert.equal(mixed.opens, 2);
+assert.equal(mixed.spent, OPEN_COST * 2);
+assert.equal(mixed.recovered, 30);
+assert.equal(mixed.unknownCount, 1);
+assert.equal(returnRate(mixed.recovered, mixed.spent), 30 / (OPEN_COST * 2));
+assert.equal(netOf(mixed), 30 - OPEN_COST * 2);
+assert.equal(returnRate(0, 0), null);
+assert.equal(mixed.history[0].value, null);
+assert.equal(mixed.history[0].profit, null);
+assert.equal(mixed.history[0].stattrak, false);
+assert.equal(mixed.history[0].phase, null);
+assert.equal(mixed.history[1].profit, 30 - OPEN_COST);
+assert.equal(mixed.history[1].stattrak, true);
+assert.equal(mixed.history[1].phase, '相位 2');
+assert.equal(mixed.history[1].wear, '崭新出厂');
 
-const phaseDoc = fillEstimates(knifeMeta, {
-  items: {
-    a: {
-      [cellKey('mw', false, 'Phase 1')]: { raw: 100, value: 100, estimated: false },
-      [cellKey('mw', false, 'Phase 2')]: { raw: null, value: null, estimated: false },
-      [cellKey('mw', false, 'Phase 3')]: { raw: 300, value: 300, estimated: false },
-      [cellKey('mw', false, 'Phase 4')]: { raw: 400, value: 400, estimated: false },
-      [cellKey('mw', false, 'Emerald')]: { raw: 500, value: 500, estimated: false },
-    },
-    b: {},
-  },
+const funUnknown = recordDrop(blankLedger(), unknown);
+const isolated = resetCurrent({
+  fun: true,
+  goldRate: 5,
+  key: 17,
+  casePrice: 5.5,
+  prices: manualPrices,
+  real: mixed,
+  funLedger: funUnknown,
 });
-assert.equal(phaseDoc.items.a[cellKey('mw', false, 'Phase 2')].value, 350);
-assert.equal(phaseDoc.items.a[cellKey('mw', false, 'Phase 2')].method, 'phase');
+assert.equal(isolated.funLedger.opens, 0);
+assert.equal(isolated.funLedger.unknownCount, 0);
+assert.equal(isolated.funLedger.spent, 0);
+assert.equal(isolated.real.recovered, 30);
+assert.equal(isolated.real.unknownCount, 1);
+assert.equal(isolated.real.spent, OPEN_COST * 2);
+assert.equal(isolated.key, 17);
+assert.equal(isolated.casePrice, 5.5);
+assert.equal(isolated.goldRate, 5);
 
-const fallbackDoc = fillEstimates(knifeMeta, {
-  items: {
-    a: {
-      [cellKey('ft', false, '')]: { raw: 40, value: 40, estimated: false },
-      [cellKey('ft', true, '')]: { raw: null, value: null, estimated: false },
-    },
-    b: {
-      [cellKey('fn', false, '')]: { raw: 10, value: 10, estimated: false },
-      [cellKey('fn', true, '')]: { raw: 40, value: 40, estimated: false },
-    },
-  },
-});
-assert.equal(fallbackDoc.items.a[cellKey('ft', true, '')].value, 160);
-assert.equal(fallbackDoc.items.a[cellKey('ft', true, '')].method, 'stattrak');
-
-const csvText = readFileSync(join(root, 'dn-prices.csv'), 'utf8');
-const priceRows = parseCsv(csvText);
-const rawBook = mapRows(manifest, priceRows);
-const priceDoc = buildPrices(manifest, csvText);
 const savedPrices = JSON.parse(readFileSync(join(root, 'prices.json'), 'utf8'));
-assert.deepEqual(savedPrices, priceDoc);
+const freshPrices = emptyPriceBook(manifest);
+assert.deepEqual(savedPrices, freshPrices);
 assert.equal(savedPrices.source, PRICE_SOURCE);
-assert.equal(readFileSync(join(root, 'index.html'), 'utf8').includes(PRICE_SOURCE), true);
-assert.equal(Object.keys(priceDoc.items).length, 47);
+assert.equal(savedPrices.date, null);
+assert.equal(Object.keys(savedPrices.items).length, 47);
 assert.equal(guns.length, 17);
 assert.equal(knives.length, 30);
-const manifestNames = new Set(manifest.items.map((item) => normalizeName(item.name_en)));
-const csvNames = new Set(priceRows.map((row) => normalizeName(row.name)));
-assert.equal(manifestNames.size, 47);
-assert.deepEqual(csvNames, manifestNames);
-for (const item of manifest.items) assert.ok(Object.keys(priceDoc.items[item.id]).length > 0, item.name_en);
-for (const row of priceRows) assert.equal(/^\u2605/.test(row.name.trim()), false, row.name);
-for (const knife of knives) assert.equal(knife.name_en.startsWith('★ '), true, knife.name_en);
-let blankCells = 0;
-for (const [id, cells] of Object.entries(rawBook.items)) {
-  for (const [key, cell] of Object.entries(cells)) {
-    const filled = priceDoc.items[id][key];
-    assert.equal(Number.isFinite(filled.value), true, `${id} ${key}`);
-    if (cell.raw == null) {
-      blankCells += 1;
-      assert.equal(filled.estimated, true, key);
-    } else {
-      assert.equal(filled.estimated, false);
-      assert.equal(filled.value, cell.raw);
+for (const item of manifest.items) {
+  const row = savedPrices.items[item.id];
+  assert.deepEqual(Object.keys(row), WEAR_CODES, item.name_en);
+  const doppler = item.name_en.includes('Gamma Doppler');
+  for (const wear of WEAR_CODES) {
+    for (const st of ['false', 'true']) {
+      const leaf = row[wear][st];
+      if (doppler) {
+        assert.deepEqual(Object.keys(leaf), PHASE_CODES, `${item.name_en} ${wear}`);
+        for (const phase of PHASE_CODES) assert.equal(leaf[phase], null);
+      } else {
+        assert.equal(leaf, null, `${item.name_en} ${wear} ${st}`);
+      }
     }
   }
+  assert.equal(lookupPrice(savedPrices, item.id, 'fn', false, doppler ? { en: 'Phase 1' } : null), null);
 }
-assert.equal(blankCells, 26);
-assert.equal(priceRows.length, 520);
-
-const excluded = expectedOpenValue(manifest, rawBook, { useEstimates: false });
-assert.equal(excluded.globalEv.toFixed(2), '8.69');
-assert.equal(excluded.globalKnives.toFixed(2), '3.97');
-assert.equal((excluded.globalEv / OPEN_COST * 100).toFixed(1), '38.6');
-assert.ok(Math.abs(excluded.globalEv - 8.6928498307) < 1e-6, excluded.globalEv);
-assert.ok(Math.abs(excluded.globalKnives - 3.9677248414) < 1e-6, excluded.globalKnives);
-const estimatedValue = expectedOpenValue(manifest, priceDoc, { useEstimates: true });
-assert.equal(estimatedValue.ev.toFixed(2), '8.73');
-assert.equal(estimatedValue.knives.toFixed(2), '4.01');
-assert.equal((estimatedValue.ev / OPEN_COST * 100).toFixed(1), '38.8');
-assert.ok(Math.abs(estimatedValue.ev - 8.7312629292) < 1e-6, estimatedValue.ev);
-console.log(
-  'EV nulls excluded',
-  excluded.globalEv.toFixed(4),
-  'knives',
-  excluded.globalKnives.toFixed(4),
-  'rate',
-  `${(excluded.globalEv / OPEN_COST * 100).toFixed(1)}%`,
-);
-console.log(
-  'EV with estimates',
-  estimatedValue.ev.toFixed(4),
-  'knives',
-  estimatedValue.knives.toFixed(4),
-  'rate',
-  `${(estimatedValue.ev / OPEN_COST * 100).toFixed(1)}%`,
-);
+const sample = emptyPriceBook(manifest);
+const gun = guns[0];
+sample.items[gun.id].FN.false = 3.27;
+sample.items[gun.id].BS.true = null;
+assert.equal(lookupPrice(sample, gun.id, 'fn', false, null), 3.27);
+assert.equal(lookupPrice(sample, gun.id, wearOf(0.01).id, false, null), 3.27);
+assert.equal(lookupPrice(sample, gun.id, 'bs', true, null), null);
+const doppler = knives.find((item) => item.name_en.includes('Gamma Doppler'));
+sample.items[doppler.id].MW.true.P4 = 1200;
+sample.items[doppler.id].MW.true.Emerald = null;
+assert.equal(lookupPrice(sample, doppler.id, 'mw', true, { en: 'Phase 4' }), 1200);
+assert.equal(lookupPrice(sample, doppler.id, 'mw', true, { en: 'Emerald' }), null);
+assert.equal(lookupPrice(sample, doppler.id, wearCodeOf(0.07).toLowerCase(), true, { en: 'Phase 4' }), 1200);
 
 console.log('case checks passed');

@@ -5,11 +5,33 @@ export function blankLedger() {
     opens: 0,
     spent: 0,
     recovered: 0,
+    unknownCount: 0,
     firstGoldAt: null,
     goldCount: 0,
     counts: {},
     history: [],
   };
+}
+
+export function settleOpen(price, cost) {
+  const known = typeof price === 'number' && Number.isFinite(price);
+  const spent = Number(cost);
+  const safeCost = Number.isFinite(spent) && spent >= 0 ? spent : 0;
+  return {
+    value: known ? price : null,
+    cost: safeCost,
+    profit: known ? price - safeCost : null,
+    unknown: !known,
+  };
+}
+
+export function returnRate(value, spent) {
+  if (!(spent > 0)) return null;
+  return value / spent;
+}
+
+export function netOf(ledger) {
+  return recoveredOf(ledger) - (Number(ledger && ledger.spent) || 0);
 }
 
 export function normalizeLedger(raw) {
@@ -24,10 +46,15 @@ export function normalizeLedger(raw) {
   const opens = Number(raw.opens);
   const spent = Number(raw.spent);
   const recovered = Number(raw.recovered);
+  let unknownCount = Number(raw.unknownCount);
+  if (!Number.isFinite(unknownCount) || unknownCount < 0) {
+    unknownCount = history.filter((row) => row.value == null).length;
+  }
   return {
     opens: Number.isFinite(opens) && opens >= 0 ? opens : 0,
     spent: Number.isFinite(spent) && spent >= 0 ? spent : 0,
     recovered: Number.isFinite(recovered) && recovered >= 0 ? recovered : 0,
+    unknownCount,
     firstGoldAt: raw.firstGoldAt == null ? null : Number(raw.firstGoldAt),
     goldCount,
     counts,
@@ -51,24 +78,28 @@ export function recordDrop(ledger, row) {
   const next = normalizeLedger(ledger);
   next.counts = { ...next.counts };
   next.history = next.history.slice();
+  const settled = settleOpen(row.value, row.cost);
   next.opens += 1;
-  next.spent += row.cost;
+  next.spent += settled.cost;
+  if (settled.unknown) next.unknownCount += 1;
+  else next.recovered += settled.value;
   if (row.tier === 'rare_special') {
     next.goldCount += 1;
     if (next.firstGoldAt == null) next.firstGoldAt = next.opens;
   }
   if (row.itemId) next.counts[row.itemId] = (next.counts[row.itemId] || 0) + 1;
-  const value = typeof row.value === 'number' && Number.isFinite(row.value) ? row.value : null;
-  next.recovered += value == null ? 0 : value;
   next.history.unshift({
     itemId: row.itemId,
     color: row.color,
     tier: row.tier,
     zh: row.zh,
     wear: row.wear,
+    stattrak: row.stattrak === true,
+    phase: row.phase || null,
     floatText: row.floatText,
-    value,
-    estimated: row.estimated === true,
+    value: settled.value,
+    cost: settled.cost,
+    profit: settled.profit,
   });
   if (next.history.length > 200) next.history.length = 200;
   return next;

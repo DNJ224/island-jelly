@@ -8,8 +8,8 @@ import {
   WINNER_AT,
   ease,
 } from './timing.js';
-import { blankLedger, recordDrop, recoveredOf, resetCurrent, splitLedgers } from './ledger.js';
-import { PRICE_SOURCE, lookupQuote } from './prices.js';
+import { blankLedger, netOf, recordDrop, recoveredOf, resetCurrent, returnRate, splitLedgers } from './ledger.js';
+import { lookupPrice } from './prices.js';
 import {
   GOLD,
   TIERS,
@@ -114,7 +114,26 @@ function recoveredValue() {
 
 function quoteFor(drop) {
   if (!priceDoc || !drop) return null;
-  return lookupQuote(priceDoc, drop.item.id, drop.wear.id, drop.stattrak, drop.phase);
+  return lookupPrice(priceDoc, drop.item.id, drop.wear.id, drop.stattrak, drop.phase);
+}
+
+function formatSigned(value) {
+  const abs = Math.abs(value);
+  const body = yuan(abs);
+  if (value > 0) return `+${body}`;
+  if (value < 0) return `-${body}`;
+  return body;
+}
+
+function paintMoney(el, value, { unknown = '价格未知' } = {}) {
+  el.classList.remove('pl-pos', 'pl-neg');
+  if (value == null || !Number.isFinite(value)) {
+    el.textContent = unknown;
+    return;
+  }
+  el.textContent = formatSigned(value);
+  if (value > 0) el.classList.add('pl-pos');
+  else if (value < 0) el.classList.add('pl-neg');
 }
 
 function rollOpts(extra = {}) {
@@ -170,7 +189,14 @@ function paintPrices() {
 }
 
 function paintReturn(spent, recovered) {
-  $('stat-return').textContent = spent > 0 ? `${((recovered / spent) * 100).toFixed(1)}%` : '—';
+  const rate = returnRate(recovered, spent);
+  $('stat-return').textContent = rate == null ? '—' : `${(rate * 100).toFixed(1)}%`;
+}
+
+function paintPriceSource() {
+  const source = priceDoc && priceDoc.source ? priceDoc.source : '未注明';
+  const date = priceDoc && priceDoc.date ? priceDoc.date : '未注明';
+  $('price-source').textContent = `参考价来源：${source}。日期：${date}。空价表示未查到，界面显示「价格未知」。`;
 }
 
 function paintLedger() {
@@ -179,8 +205,9 @@ function paintLedger() {
   $('stat-opens').textContent = String(book.opens);
   $('stat-spent').textContent = yuan(book.spent);
   $('stat-recovered').textContent = yuan(recovered);
-  $('stat-net').textContent = yuan(book.spent - recovered);
+  paintMoney($('stat-net'), netOf(book), { unknown: '¥0.00' });
   paintReturn(book.spent, recovered);
+  $('stat-unknown').textContent = String(book.unknownCount || 0);
   $('stat-golds').textContent = String(book.goldCount);
   $('stat-gold').textContent = book.firstGoldAt == null ? '尚未开出' : `第 ${book.firstGoldAt} 次`;
   $('ledger-mode').textContent = state.fun ? '当前：娱乐模式' : '当前：真实模式';
@@ -194,7 +221,7 @@ function paintLedger() {
     list.append(empty);
     return;
   }
-  book.history.slice(0, 40).forEach((row, index) => {
+  book.history.forEach((row, index) => {
     const li = document.createElement('li');
     li.className = index === 0 ? 'hrow latest' : 'hrow';
     const swatch = document.createElement('i');
@@ -206,36 +233,42 @@ function paintLedger() {
     const name = document.createElement('b');
     name.textContent = row.zh;
     const meta = document.createElement('small');
-    meta.textContent = `${row.wear} · ${row.floatText}`;
-    if (Number.isFinite(row.value)) {
-      meta.append(document.createTextNode(` · ${yuan(row.value)}`));
-      if (row.estimated) {
-        const mark = document.createElement('span');
-        mark.className = 'est';
-        mark.textContent = '估';
-        meta.append(mark);
-      }
+    const phase = row.phase || '无相位';
+    const st = row.stattrak ? 'StatTrak™' : '非 StatTrak';
+    meta.textContent = `${row.wear} · ${st} · ${phase}${row.floatText ? ` · ${row.floatText}` : ''}`;
+    const money = document.createElement('span');
+    money.className = 'hmoney';
+    const price = document.createElement('b');
+    price.textContent = Number.isFinite(row.value) ? yuan(row.value) : '价格未知';
+    const pl = document.createElement('small');
+    if (Number.isFinite(row.profit)) {
+      pl.textContent = formatSigned(row.profit);
+      if (row.profit > 0) pl.classList.add('pl-pos');
+      else if (row.profit < 0) pl.classList.add('pl-neg');
+    } else {
+      pl.textContent = '盈亏 —';
     }
+    money.append(price, pl);
     text.append(name, meta);
-    li.append(swatch, text);
+    li.append(swatch, text, money);
     list.append(li);
   });
 }
 
-function record(drop) {
+function record(drop, value) {
   const names = displayName(drop);
   const cost = state.key + state.casePrice;
-  const quote = quoteFor(drop);
   setLedger(recordDrop(ledger(), {
     itemId: drop.item.id,
     tier: drop.tier,
     color: drop.color,
     zh: names.zh,
     wear: drop.wear.zh,
+    stattrak: drop.stattrak,
+    phase: drop.phase ? drop.phase.zh : null,
     floatText: drop.floatValue.toFixed(4),
     cost,
-    value: quote ? quote.value : null,
-    estimated: Boolean(quote && quote.estimated),
+    value,
   }));
   saveState();
   paintLedger();
@@ -482,7 +515,24 @@ function paintName(el, text) {
   if (rest) el.append(document.createTextNode(rest));
 }
 
-function showReveal(drop) {
+function paintOpenResult(value, cost) {
+  const priceEl = $('reveal-price');
+  const plEl = $('reveal-pl');
+  priceEl.classList.remove('pl-pos', 'pl-neg');
+  plEl.classList.remove('pl-pos', 'pl-neg');
+  if (value == null || !Number.isFinite(value)) {
+    priceEl.textContent = '价格未知';
+    plEl.textContent = '本次盈亏 —';
+    return;
+  }
+  priceEl.textContent = `参考价 ${yuan(value)}`;
+  const profit = value - cost;
+  plEl.textContent = `本次盈亏 ${formatSigned(profit)}`;
+  if (profit > 0) plEl.classList.add('pl-pos');
+  else if (profit < 0) plEl.classList.add('pl-neg');
+}
+
+function showReveal(drop, value, cost) {
   const names = displayName(drop);
   const reveal = $('reveal');
   reveal.hidden = false;
@@ -512,7 +562,7 @@ function showReveal(drop) {
   $('reveal-zh').style.color = gold ? GOLD : '#f4f1ea';
   paintName($('reveal-en'), names.en);
   $('reveal-wear').textContent = `${drop.wear.zh} · ${drop.wear.en}`;
-  paintQuote($('reveal-price'), quoteFor(drop));
+  paintOpenResult(value, cost);
   $('reveal-float').textContent = drop.floatValue.toFixed(8);
   $('float-pin').style.left = `${Math.min(100, Math.max(0, drop.floatValue * 100))}%`;
   $('reveal-range').textContent = `磨损区间 ${drop.item.float_min.toFixed(2)} – ${drop.item.float_max.toFixed(2)}`;
@@ -520,18 +570,6 @@ function showReveal(drop) {
   $('back').hidden = false;
   $('live').textContent = names.zh;
   if (!audio.muted) audio.reveal(drop.tier);
-}
-
-function paintQuote(el, quote) {
-  el.replaceChildren();
-  if (!quote) return;
-  el.append(document.createTextNode(yuan(quote.value)));
-  if (quote.estimated) {
-    const mark = document.createElement('span');
-    mark.className = 'est';
-    mark.textContent = '估';
-    el.append(mark);
-  }
 }
 
 function focusWinner() {
@@ -649,8 +687,10 @@ async function openCase() {
     if (!fast) await new Promise((resolve) => { setTimeout(resolve, DIM_MS); });
     $('stage').classList.add('is-dim');
     focusWinner();
-    record(drop);
-    showReveal(drop);
+    const cost = state.key + state.casePrice;
+    const value = quoteFor(drop);
+    record(drop, value);
+    showReveal(drop, value, cost);
   } finally {
     $('open').disabled = false;
     $('open').textContent = '开启武器箱';
@@ -815,12 +855,13 @@ async function main() {
   if (!response.ok || !priceResponse.ok) throw new Error('manifest');
   manifest = await response.json();
   priceDoc = await priceResponse.json();
-  if (priceDoc.source !== PRICE_SOURCE) throw new Error('price source');
+  if (!priceDoc || !priceDoc.items) throw new Error('prices');
   cat = prepare(manifest);
   if (state.sound === false) setSound(false);
   else setSound(true);
   setFast(fast);
   paintPrices();
+  paintPriceSource();
   paintLedger();
   renderPreview();
   renderPriceBook();
