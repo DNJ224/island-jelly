@@ -1,0 +1,13 @@
+{
+  "name": "果冻海岛 Island Jelly",
+  "short_name": "果冻海岛",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#ece9e3",
+  "theme_color": "#ece9e3",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
