@@ -98,6 +98,11 @@ const idle = await page.evaluate(() => {
     st: getComputedStyle(document.documentElement).getPropertyValue('--st').trim(),
     forceTier: window.__case.forceTier,
     debug: window.__case.debug,
+    spinMs: window.__case.spinMs,
+    unlockMs: window.__case.unlockMs,
+    reelLen: window.__case.reelLen,
+    winnerAt: window.__case.winnerAt,
+    passes: window.__case.winnerAt - window.__case.startAt,
   };
 });
 check('17 guns and one gold tile', idle.guns === 17 && idle.cells === 18 && isGold(idle.rare) && idle.rareText.includes('稀有特殊物品') && idle.rareSrc.includes('rare_special_item.png'), JSON.stringify(idle));
@@ -110,6 +115,7 @@ check('inspect heading', idle.heading === '包含以下物品之一' && idle.ins
 check('odds labels', idle.note.includes('Valve 公布（二手来源）') && idle.note.includes('常见说法，未核实') && idle.note.includes('社区估算，非官方') && idle.note.includes('磨损在范围内均匀分布，简化处理'));
 check('tap targets and stattrak color', idle.toolH >= 44 && idle.st === '#cf6a32', JSON.stringify({ toolH: idle.toolH, st: idle.st }));
 check('force hidden on the public page', idle.debug === false && idle.forceTier === '');
+check('reel timing', idle.spinMs === 5900 && idle.unlockMs === 1300 && idle.winnerAt === 37 && idle.reelLen === 48 && idle.passes >= 36 && idle.passes <= 38, JSON.stringify(idle));
 check('no horizontal overflow', idle.overflow === false);
 await page.screenshot({ path: `${shots}/case-idle.png` });
 
@@ -155,16 +161,19 @@ await page.screenshot({ path: `${shots}/case-contents.png` });
 await page.click('#contents-close');
 
 await page.click('#open');
-await page.waitForTimeout(2200);
+await page.waitForTimeout(3800);
 const mid = await page.evaluate(() => ({
   revealHidden: document.getElementById('reveal').hidden,
   transform: document.getElementById('reel').style.transform,
   cards: document.querySelectorAll('.card').length,
 }));
-check('reel is spinning', mid.revealHidden && mid.cards === 64 && mid.transform.includes('translate3d'), JSON.stringify(mid));
+check('reel is spinning', mid.revealHidden && mid.cards === 48 && mid.transform.includes('translate3d'), JSON.stringify(mid));
 await page.screenshot({ path: `${shots}/case-mid-spin.png` });
 
-await page.waitForFunction(() => document.getElementById('reveal').hidden === false, null, { timeout: 12000 });
+await page.waitForFunction(() => {
+  const reveal = document.getElementById('reveal');
+  return reveal && !reveal.hidden && parseFloat(getComputedStyle(reveal).opacity) > 0.95;
+}, null, { timeout: 15000 });
 const reveal = await page.evaluate(() => {
   const cards = [...document.querySelectorAll('.card')];
   const fillers = cards.filter((card) => !card.classList.contains('winner'));
@@ -177,9 +186,11 @@ const reveal = await page.evaluate(() => {
     stTags: document.querySelectorAll('.st-tag').length,
     fillerGold: fillers.filter((card) => card.dataset.tier === 'rare_special').length,
     tierFont: parseFloat(getComputedStyle(document.getElementById('reveal-tier')).fontSize),
+    winnerAt: cards.findIndex((card) => card.classList.contains('winner')),
+    dimmed: document.getElementById('stage').classList.contains('is-dim'),
   };
 });
-check('reveal shows a drop', Boolean(reveal.zh) && Boolean(reveal.en) && reveal.wear.includes('·') && /^\d\.\d{8}$/.test(reveal.floatText) && reveal.shown, JSON.stringify(reveal));
+check('reveal shows a drop', Boolean(reveal.zh) && Boolean(reveal.en) && reveal.wear.includes('·') && /^\d\.\d{8}$/.test(reveal.floatText) && reveal.shown && reveal.winnerAt === 37 && reveal.dimmed, JSON.stringify(reveal));
 check('reel has no stattrak tag and no filler gold', reveal.stTags === 0 && reveal.fillerGold === 0, JSON.stringify(reveal));
 check('rarity label is at least 15px', reveal.tierFont >= 15, String(reveal.tierFont));
 await page.screenshot({ path: `${shots}/case-reveal.png` });
@@ -204,7 +215,10 @@ check('bare force=gold is ignored', gated.debug === false && gated.forceTier ===
 await goldPage.goto(`${base}?debug=1&force=gold`, { waitUntil: 'domcontentloaded' });
 await goldPage.waitForFunction(() => window.__case && window.__case.ready && window.__case.forceTier === 'gold', null, { timeout: 15000 });
 await goldPage.click('#open');
-await goldPage.waitForFunction(() => document.getElementById('reveal').hidden === false, null, { timeout: 12000 });
+await goldPage.waitForFunction(() => {
+  const reveal = document.getElementById('reveal');
+  return reveal && !reveal.hidden && parseFloat(getComputedStyle(reveal).opacity) > 0.95;
+}, null, { timeout: 15000 });
 const gold = await goldPage.evaluate(() => {
   const winner = document.querySelector('.card.winner');
   const bar = winner?.querySelector('.bar');
@@ -234,6 +248,7 @@ const gold = await goldPage.evaluate(() => {
     stTags: document.querySelectorAll('.st-tag').length,
     fillerGold: fillers.filter((card) => card.dataset.tier === 'rare_special').length,
     fillerIcon: fillers.filter((card) => (card.querySelector('img')?.getAttribute('src') || '').includes('rare_special_item')).length,
+    winnerAt: [...document.querySelectorAll('.card')].findIndex((card) => card.classList.contains('winner')),
   };
 });
 const knifeName = /刀|匕/.test(gold.zh);
@@ -241,7 +256,7 @@ check('forced gold reveal', gold.tier === 'rare_special' && gold.goldClass && go
 check('gold is not covert red', isGold(gold.revealColor) && isGold(gold.card) && isGold(gold.bar) && isGold(gold.swatch) && isGold(gold.swatchData), JSON.stringify(gold));
 check('gold name and glow', isGold(gold.nameColor) && gold.rays !== 'none' && /^\d\.\d{8}$/.test(gold.floatText));
 check('gold chip is readable', isGold(gold.tierBg) && gold.tierFont >= 15 && !isGold(gold.tierColor), JSON.stringify(gold));
-check('winning gold card is the mystery icon', gold.winnerSrc.includes('rare_special_item.png') && gold.winnerText.includes('★ 稀有特殊物品') && !/刀|匕首/.test(gold.winnerText) && !gold.revealSrc.includes('rare_special_item') && gold.stTags === 0 && gold.fillerGold === 0 && gold.fillerIcon === 0, JSON.stringify(gold));
+check('winning gold card is the mystery icon', gold.winnerAt === 37 && gold.winnerSrc.includes('rare_special_item.png') && gold.winnerText.includes('★ 稀有特殊物品') && !/刀|匕首/.test(gold.winnerText) && !gold.revealSrc.includes('rare_special_item') && gold.stTags === 0 && gold.fillerGold === 0 && gold.fillerIcon === 0, JSON.stringify(gold));
 await goldPage.screenshot({ path: `${shots}/case-gold.png` });
 check('gold console', goldLogs.length === 0, goldLogs.join(' | '));
 await goldContext.close();
@@ -263,11 +278,13 @@ const deskState = await deskPage.evaluate(() => {
 });
 check('desktop preview', deskState.guns === 17 && isGold(deskState.rare) && deskState.cols === 7 && deskState.overflow === false, JSON.stringify(deskState));
 await deskPage.screenshot({ path: `${shots}/case-desktop.png` });
+await deskPage.screenshot({ path: `${shots}/case-preview.png` });
 await deskPage.click('#btn-fast');
 await deskPage.click('#open');
 await deskPage.waitForFunction(() => {
   const img = document.getElementById('reveal-img');
-  return img && !document.getElementById('reveal').hidden && img.complete && img.naturalWidth > 0;
+  const reveal = document.getElementById('reveal');
+  return img && reveal && !reveal.hidden && img.complete && img.naturalWidth > 0 && parseFloat(getComputedStyle(reveal).opacity) > 0.95;
 }, null, { timeout: 12000 });
 const fit = await deskPage.evaluate(() => {
   const again = document.getElementById('again').getBoundingClientRect();

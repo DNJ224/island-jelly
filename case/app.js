@@ -1,5 +1,14 @@
 import { createAudio } from './audio.js';
 import {
+  DIM_MS,
+  REEL_LEN,
+  SPIN_MS,
+  START_AT,
+  UNLOCK_MS,
+  WINNER_AT,
+  ease,
+} from './timing.js';
+import {
   GOLD,
   TIERS,
   PHASES,
@@ -14,13 +23,8 @@ import {
   uiColor,
 } from './roll.js';
 
-const SPIN_MS = 5600;
-const UNLOCK_MS = 340;
 const EXPECT_OPENS = 385;
 const NOMAD_YUAN = 741;
-const REEL_LEN = 64;
-const WINNER_AT = 54;
-const START_AT = 2;
 const STORE_KEY = 'dn-case-v1';
 
 const audio = createAudio();
@@ -356,13 +360,8 @@ function makeCard(drop) {
   return card;
 }
 
-function ease(t) {
-  const k = 3.15;
-  return (1 - Math.exp(-k * t)) / (1 - Math.exp(-k));
-}
-
 function clearGoldFx() {
-  $('stage').classList.remove('is-gold');
+  $('stage').classList.remove('is-gold', 'is-dim');
   document.querySelectorAll('.sparks').forEach((node) => node.remove());
 }
 
@@ -478,13 +477,13 @@ function spinReel() {
         const cardsPerSec = dt > 0 ? Math.abs(pos - prevPos) / dt / stride : 0;
         if (index !== lastIndex) {
           const crossed = Math.max(1, index - lastIndex);
-          const speed = Math.max(0, Math.min(1, cardsPerSec / 30));
+          const speed = Math.max(0, Math.min(1, cardsPerSec / 16));
           if (!audio.muted) {
             for (let i = 0; i < Math.min(crossed, 3); i += 1) audio.tick(speed, i * 0.01);
           }
           lastIndex = index;
         }
-        const blur = cardsPerSec > 14 ? Math.min(1.5, (cardsPerSec - 14) / 18) : 0;
+        const blur = cardsPerSec > 8 ? Math.min(1.4, (cardsPerSec - 8) / 10) : 0;
         reel.style.filter = blur ? `blur(${blur.toFixed(2)}px)` : 'none';
       }
       prevTime = now;
@@ -548,8 +547,9 @@ async function openCase() {
       await spinReel();
     }
 
+    if (!fast) await new Promise((resolve) => { setTimeout(resolve, DIM_MS); });
+    $('stage').classList.add('is-dim');
     focusWinner();
-    if (!fast) await new Promise((resolve) => { setTimeout(resolve, 280); });
     record(drop);
     showReveal(drop);
   } finally {
@@ -713,6 +713,11 @@ async function main() {
     GOLD,
     debug,
     forceTier,
+    spinMs: SPIN_MS,
+    unlockMs: UNLOCK_MS,
+    reelLen: REEL_LEN,
+    winnerAt: WINNER_AT,
+    startAt: START_AT,
     get lastDrop() { return lastDrop; },
   };
 }

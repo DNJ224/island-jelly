@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ease, REEL_LEN, SPIN_MS, START_AT, UNLOCK_MS, WINNER_AT } from '../case/timing.js';
 import {
   GOLD,
   PHASE_BASIS,
@@ -242,4 +243,25 @@ for (const phase of PHASES) {
   assertRate(phase.id, phaseCounts[phase.id] / phaseN, phase.weight / PHASE_BASIS, phaseN);
 }
 console.log('phase counts', phaseCounts);
+
+assert.equal(SPIN_MS, 5900);
+assert.equal(UNLOCK_MS, 1300);
+assert.equal(WINNER_AT, 37);
+assert.equal(REEL_LEN, 48);
+assert.ok(WINNER_AT - START_AT >= 36 && WINNER_AT - START_AT <= 38);
+assert.equal(ease(0), 0);
+assert.equal(ease(1), 1);
+let prev = -1;
+for (let i = 0; i <= 100; i += 1) {
+  const value = ease(i / 100);
+  assert.ok(value >= prev && value <= 1, `ease overshoot at ${i}`);
+  prev = value;
+}
+const initialSlope = ease(0.02) / 0.02;
+assert.ok(initialSlope > 1.5, `starts fast, slope ${initialSlope}`);
+const finalSlope = (1 - ease(0.98)) / 0.02;
+assert.ok(finalSlope < 0.15, `stops, slope ${finalSlope}`);
+const cubic = (x) => 1 - (1 - x) ** 3;
+assert.ok(ease(0.85) < cubic(0.85), 'ease-out cubic finishes too early and then crawls');
+
 console.log('case checks passed');

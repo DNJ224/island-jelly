@@ -94,10 +94,11 @@ export function createAudio() {
   }
 
   function unlock() {
-    // Short thump and whoosh. Kept under the reel delay so ticks do not stack on it.
-    tone({ type: 'sine', freq: 108, freqTo: 46, dur: 0.14, peak: 0.5 });
-    tone({ type: 'triangle', freq: 220, freqTo: 90, dur: 0.1, peak: 0.12 });
-    burst({ dur: 0.28, peak: 0.2, type: 'bandpass', freq: 900, q: 0.65 });
+    // About 1.3s, matching the wait before the reel. The whoosh ends as the ticks start.
+    tone({ type: 'sine', freq: 108, freqTo: 46, dur: 0.18, peak: 0.5 });
+    tone({ type: 'triangle', freq: 220, freqTo: 90, dur: 0.12, peak: 0.12 });
+    burst({ dur: 1.2, peak: 0.22, type: 'bandpass', freq: 900, q: 0.65 });
+    tone({ type: 'triangle', freq: 180, freqTo: 70, dur: 0.08, peak: 0.16, delay: 1.15 });
   }
 
   function tick(speed, delay) {

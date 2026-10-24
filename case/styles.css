@@ -271,6 +271,18 @@ button {
   border-bottom: 8px solid #f6f3ec;
 }
 
+#stage.is-dim .reel-wrap {
+  filter: brightness(0.38);
+  transition: filter 200ms linear;
+}
+#stage.is-dim #reveal,
+#stage.is-dim .stage-actions {
+  animation: reveal-in 300ms ease both;
+}
+@keyframes reveal-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 #reveal {
   position: relative;
   flex: 1 1 auto;
@@ -555,5 +567,6 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.62); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rays, .flash, .sparks i { animation: none; }
+  .rays, .flash, .sparks i, #reveal, .stage-actions { animation: none; }
+  #stage.is-dim .reel-wrap { transition: none; }
 }
