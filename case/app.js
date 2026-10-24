@@ -8,13 +8,16 @@ import {
   eachPercent,
   prepare,
   randomUnit,
+  parsePrice,
   rollDrop,
   tierPercent,
   uiColor,
 } from './roll.js';
 
 const SPIN_MS = 5600;
-const UNLOCK_MS = 380;
+const UNLOCK_MS = 340;
+const EXPECT_OPENS = 385;
+const NOMAD_YUAN = 741;
 const REEL_LEN = 64;
 const WINNER_AT = 54;
 const START_AT = 2;
@@ -24,7 +27,8 @@ const audio = createAudio();
 const $ = (id) => document.getElementById(id);
 
 const params = new URLSearchParams(location.search);
-const forceTier = params.get('force') || '';
+const debug = params.get('debug') === '1';
+const forceTier = debug ? (params.get('force') || '') : '';
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let cat = null;
@@ -40,16 +44,34 @@ function loadState() {
     opens: 0,
     spent: 0,
     firstGoldAt: null,
+    goldCount: 0,
+    counts: {},
+    prices: {},
     history: [],
-    key: 17.5,
-    casePrice: 0,
+    key: 17,
+    casePrice: 5.5,
     sound: true,
   };
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return blank;
     const saved = JSON.parse(raw);
-    return { ...blank, ...saved, history: Array.isArray(saved.history) ? saved.history : [] };
+    const history = Array.isArray(saved.history) ? saved.history : [];
+    const state = {
+      ...blank,
+      ...saved,
+      history,
+      counts: saved.counts && typeof saved.counts === 'object' && !Array.isArray(saved.counts) ? saved.counts : {},
+      prices: saved.prices && typeof saved.prices === 'object' && !Array.isArray(saved.prices) ? saved.prices : {},
+    };
+    if (!Number.isFinite(state.key) || state.key < 0) state.key = blank.key;
+    if (!Number.isFinite(state.casePrice) || state.casePrice < 0) state.casePrice = blank.casePrice;
+    if (saved.goldCount == null || !Number.isFinite(Number(saved.goldCount))) {
+      state.goldCount = history.filter((row) => row.tier === 'rare_special').length;
+    } else {
+      state.goldCount = Number(saved.goldCount);
+    }
+    return state;
   } catch {
     return blank;
   }
@@ -68,14 +90,17 @@ function yuan(value) {
   return `¥${n.toFixed(2)}`;
 }
 
-function readPrice(id, fallback) {
-  const n = Number($(id).value);
-  if (!Number.isFinite(n) || n < 0) return fallback;
-  return Math.round(n * 100) / 100;
+function formatPrice(n) {
+  return (Math.round(n * 100) / 100).toFixed(2);
 }
 
-function currentCost() {
-  return readPrice('key-price', state.key) + readPrice('case-price', state.casePrice);
+function recoveredValue() {
+  let sum = 0;
+  for (const [id, count] of Object.entries(state.counts)) {
+    const price = state.prices[id];
+    if (Number.isFinite(price) && count) sum += price * count;
+  }
+  return sum;
 }
 
 function esc(value) {
@@ -94,15 +119,25 @@ function fmtPct(value) {
   return `${value.toFixed(2)}%`;
 }
 
+function paintCostNotes() {
+  const cost = state.key + state.casePrice;
+  $('next-cost').textContent = `下一次开启计入 ${yuan(cost)}（钥匙 + 箱子）。`;
+  $('expect-cost').textContent = `金色 0.26% ≈ ${EXPECT_OPENS} 次开到一把刀。期望花费 ${EXPECT_OPENS} × ${yuan(cost)} = ${yuan(EXPECT_OPENS * cost)}。对照流浪者匕首 ${yuan(NOMAD_YUAN)}，BUFF 参考价，2026-10-24。`;
+}
+
 function paintPrices() {
-  $('key-price').value = String(state.key);
-  $('case-price').value = String(state.casePrice);
-  $('next-cost').textContent = `下一次开启计入 ${yuan(state.key + state.casePrice)}（钥匙 + 箱子）。`;
+  $('key-price').value = formatPrice(state.key);
+  $('case-price').value = formatPrice(state.casePrice);
+  paintCostNotes();
 }
 
 function paintLedger() {
+  const recovered = recoveredValue();
   $('stat-opens').textContent = String(state.opens);
   $('stat-spent').textContent = yuan(state.spent);
+  $('stat-recovered').textContent = yuan(recovered);
+  $('stat-net').textContent = yuan(state.spent - recovered);
+  $('stat-golds').textContent = String(state.goldCount);
   $('stat-gold').textContent = state.firstGoldAt == null ? '尚未开出' : `第 ${state.firstGoldAt} 次`;
   const list = $('history');
   list.replaceChildren();
@@ -134,13 +169,16 @@ function paintLedger() {
 
 function record(drop) {
   const names = displayName(drop);
-  const cost = currentCost();
-  state.key = readPrice('key-price', state.key);
-  state.casePrice = readPrice('case-price', state.casePrice);
+  const cost = state.key + state.casePrice;
   state.opens += 1;
   state.spent += cost;
-  if (drop.tier === 'rare_special' && state.firstGoldAt == null) state.firstGoldAt = state.opens;
+  if (drop.tier === 'rare_special') {
+    state.goldCount += 1;
+    if (state.firstGoldAt == null) state.firstGoldAt = state.opens;
+  }
+  state.counts[drop.item.id] = (state.counts[drop.item.id] || 0) + 1;
   state.history.unshift({
+    itemId: drop.item.id,
     color: drop.color,
     tier: drop.tier,
     zh: names.zh,
@@ -152,8 +190,9 @@ function record(drop) {
   paintLedger();
 }
 
-function tileBackground(color) {
-  return `radial-gradient(90% 85% at 50% 100%, ${color} 0%, #14161c 60%)`;
+function skinZh(item) {
+  const parts = item.name_zh.split(' | ');
+  return parts.length > 1 ? parts.slice(1).join(' | ') : '';
 }
 
 function renderPreview() {
@@ -163,47 +202,43 @@ function renderPreview() {
   img.addEventListener('error', () => { img.hidden = true; }, { once: true });
 
   const grid = $('grid');
-  grid.append(makeTile({
-    kind: 'rare',
-    color: GOLD,
-    image: manifest.rare_special_item_icon.image,
-    zh: manifest.rare_special_item_icon.name_zh,
-    en: 'Rare Special Item',
-  }));
-
-  const order = ['covert', 'classified', 'restricted', 'milspec'];
+  const order = ['milspec', 'restricted', 'classified', 'covert'];
   const guns = manifest.items.filter((item) => item.tier !== 'rare_special');
   guns.sort((a, b) => order.indexOf(a.tier) - order.indexOf(b.tier));
   for (const item of guns) {
     grid.append(makeTile({
       kind: 'gun',
+      tier: item.tier,
       color: uiColor(item),
       image: item.image,
-      zh: item.name_zh,
-      en: item.name_en,
+      weapon: item.weapon_zh,
+      skin: skinZh(item),
     }));
   }
+  grid.append(makeTile({
+    kind: 'rare',
+    tier: 'rare_special',
+    color: GOLD,
+    image: manifest.rare_special_item_icon.image,
+    weapon: '★ 稀有特殊物品',
+    skin: '',
+  }));
 
-  $('odds-note').textContent = '品级概率为 Valve 公布（二手来源）：稀有特殊 0.26%、隐秘 0.64%、保密 3.20%、受限 15.98%、军规级 79.92%。StatTrak™ 10% 为常见说法，未核实。伽玛多普勒相位（相位 1–4 各 23.75%，绿宝石 5%）为社区估算，非官方。';
+  $('odds-note').textContent = '品级概率为 Valve 公布（二手来源）：稀有特殊 0.26%、隐秘 0.64%、保密 3.20%、受限 15.98%、军规级 79.92%。StatTrak™ 10% 为常见说法，未核实。伽玛多普勒相位（相位 1–4 各 23.75%，绿宝石 5%）为社区估算，非官方。磨损在范围内均匀分布，简化处理。';
 }
 
-function makeTile({ kind, color, image, zh, en }) {
-  const tile = document.createElement('article');
-  tile.className = kind === 'rare' ? 'tile rare' : 'tile';
-  tile.dataset.kind = kind;
-  tile.dataset.color = color;
-  tile.style.setProperty('--rarity', color);
-  tile.style.background = tileBackground(color);
+function makeTile({ kind, tier, color, image, weapon, skin }) {
+  const cell = document.createElement('article');
+  cell.className = kind === 'rare' ? 'cell rare' : 'cell';
+  cell.dataset.kind = kind;
+  cell.dataset.tier = tier;
+  cell.dataset.color = color;
+  const tile = document.createElement('div');
+  tile.className = 'tile';
   const img = document.createElement('img');
-  img.alt = zh;
+  img.alt = skin ? `${weapon} | ${skin}` : weapon;
   img.draggable = false;
   img.src = image;
-  const name = document.createElement('span');
-  name.className = 'tname';
-  name.textContent = zh;
-  const sub = document.createElement('span');
-  sub.className = 'ten';
-  sub.textContent = en;
   const bar = document.createElement('i');
   bar.className = 'bar';
   bar.style.background = color;
@@ -211,8 +246,18 @@ function makeTile({ kind, color, image, zh, en }) {
     tile.classList.add('no-img');
     img.remove();
   }, { once: true });
-  tile.append(img, name, sub, bar);
-  return tile;
+  tile.append(img, bar);
+  const cap = document.createElement('p');
+  cap.className = 'cap';
+  const wep = document.createElement('b');
+  wep.className = 'wep';
+  wep.textContent = weapon;
+  const finish = document.createElement('span');
+  finish.className = 'skin';
+  finish.textContent = skin;
+  cap.append(wep, finish);
+  cell.append(tile, cap);
+  return cell;
 }
 
 function renderContents() {
@@ -286,18 +331,20 @@ function renderContents() {
 }
 
 function makeCard(drop) {
+  const gold = drop.tier === 'rare_special';
   const card = document.createElement('div');
-  card.className = drop.stattrak ? 'card is-st' : 'card';
+  card.className = gold ? 'card mystery' : 'card';
   card.style.setProperty('--rarity', drop.color);
   card.dataset.color = drop.color;
   card.dataset.tier = drop.tier;
+  const label = gold ? '★ 稀有特殊物品' : drop.item.name_zh;
   const img = document.createElement('img');
-  img.alt = '';
+  img.alt = label;
   img.draggable = false;
-  img.src = drop.image;
+  img.src = gold ? manifest.rare_special_item_icon.image : drop.image;
   const name = document.createElement('span');
   name.className = 'fname';
-  name.textContent = drop.item.name_zh;
+  name.textContent = label;
   const bar = document.createElement('i');
   bar.className = 'bar';
   bar.style.background = drop.color;
@@ -306,12 +353,6 @@ function makeCard(drop) {
     img.remove();
   }, { once: true });
   card.append(img, name, bar);
-  if (drop.stattrak) {
-    const tag = document.createElement('em');
-    tag.className = 'st-tag';
-    tag.textContent = 'ST';
-    card.append(tag);
-  }
   return card;
 }
 
@@ -339,6 +380,23 @@ function spawnSparks() {
   $('stage').append(layer);
 }
 
+function paintName(el, text) {
+  el.replaceChildren();
+  const marker = 'StatTrak™';
+  const at = text.indexOf(marker);
+  if (at < 0) {
+    el.textContent = text;
+    return;
+  }
+  if (at > 0) el.append(document.createTextNode(text.slice(0, at)));
+  const mark = document.createElement('span');
+  mark.className = 'st-word';
+  mark.textContent = marker;
+  el.append(mark);
+  const rest = text.slice(at + marker.length);
+  if (rest) el.append(document.createTextNode(rest));
+}
+
 function showReveal(drop) {
   const names = displayName(drop);
   const reveal = $('reveal');
@@ -360,14 +418,14 @@ function showReveal(drop) {
     fallback.hidden = false;
     fallback.textContent = names.zh;
   };
-  $('reveal-st').hidden = !drop.stattrak;
-  $('reveal-tier').textContent = gold ? '★ 稀有特殊物品' : drop.tierZh;
-  $('reveal-tier').style.color = drop.color;
-  const zh = names.zh.replace(/^StatTrak™ /, '');
-  const en = names.en.replace(/^StatTrak™ /, '');
-  $('reveal-zh').textContent = zh;
+  $('reveal-st').hidden = true;
+  const tierEl = $('reveal-tier');
+  tierEl.textContent = gold ? '★ 稀有特殊物品' : drop.tierZh;
+  tierEl.style.background = drop.color;
+  tierEl.style.color = gold ? '#1c1408' : '#f7f4ee';
+  paintName($('reveal-zh'), names.zh);
   $('reveal-zh').style.color = gold ? GOLD : '#f4f1ea';
-  $('reveal-en').textContent = en;
+  paintName($('reveal-en'), names.en);
   $('reveal-wear').textContent = `${drop.wear.zh} · ${drop.wear.en}`;
   $('reveal-float').textContent = drop.floatValue.toFixed(8);
   $('float-pin').style.left = `${Math.min(100, Math.max(0, drop.floatValue * 100))}%`;
@@ -522,10 +580,12 @@ function bind() {
   $('btn-fast').addEventListener('click', () => setFast(!fast));
   $('btn-sound').addEventListener('click', () => {
     const on = $('btn-sound').getAttribute('aria-pressed') !== 'true';
-    if (on) audio.arm();
     setSound(on);
+    if (on) audio.arm();
   });
-  $('btn-contents').addEventListener('click', () => $('contents-dlg').showModal());
+  const openContents = () => $('contents-dlg').showModal();
+  $('btn-contents').addEventListener('click', openContents);
+  $('btn-inspect').addEventListener('click', openContents);
   $('contents-close').addEventListener('click', () => $('contents-dlg').close());
   $('btn-ledger').addEventListener('click', () => {
     paintLedger();
@@ -537,11 +597,21 @@ function bind() {
       if (event.target === dialog) dialog.close();
     });
   }
-  for (const id of ['key-price', 'case-price']) {
+  for (const [id, key] of [['key-price', 'key'], ['case-price', 'casePrice']]) {
     $(id).addEventListener('input', () => {
-      state.key = readPrice('key-price', state.key);
-      state.casePrice = readPrice('case-price', state.casePrice);
-      $('next-cost').textContent = `下一次开启计入 ${yuan(state.key + state.casePrice)}（钥匙 + 箱子）。`;
+      const text = $(id).value.trim();
+      if (text === '') return;
+      const n = Number(text);
+      if (!Number.isFinite(n) || n < 0) return;
+      state[key] = Math.round(n * 100) / 100;
+      paintCostNotes();
+      saveState();
+    });
+    $(id).addEventListener('blur', () => {
+      const next = parsePrice($(id).value, state[key]);
+      state[key] = next;
+      $(id).value = formatPrice(next);
+      paintCostNotes();
       saveState();
     });
   }
@@ -550,10 +620,77 @@ function bind() {
     state.opens = 0;
     state.spent = 0;
     state.firstGoldAt = null;
+    state.goldCount = 0;
+    state.counts = {};
     state.history = [];
     saveState();
     paintLedger();
   });
+}
+
+function commitItemPrice(input) {
+  const id = input.dataset.priceId;
+  const text = input.value.trim();
+  if (text === '') {
+    delete state.prices[id];
+    input.value = '';
+  } else {
+    const n = Number(text);
+    if (!Number.isFinite(n) || n < 0) {
+      const prev = state.prices[id];
+      input.value = Number.isFinite(prev) ? formatPrice(prev) : '';
+    } else {
+      const rounded = Math.round(n * 100) / 100;
+      state.prices[id] = rounded;
+      input.value = formatPrice(rounded);
+    }
+  }
+  saveState();
+  paintLedger();
+}
+
+function renderPriceBook() {
+  const root = $('price-book');
+  const order = ['milspec', 'restricted', 'classified', 'covert', 'rare_special'];
+  for (const tierId of order) {
+    const tier = TIERS.find((entry) => entry.id === tierId);
+    const items = manifest.items.filter((item) => item.tier === tierId);
+    const head = document.createElement('h3');
+    head.textContent = tierId === 'rare_special' ? '★ 稀有特殊物品' : tier.zh;
+    head.style.color = tierId === 'rare_special' ? GOLD : uiColor(items[0]);
+    const list = document.createElement('div');
+    list.className = 'ref-list';
+    for (const item of items) {
+      const label = document.createElement('label');
+      label.className = 'ref-price';
+      const name = document.createElement('span');
+      name.textContent = item.name_zh;
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.step = '0.01';
+      input.inputMode = 'decimal';
+      input.autocomplete = 'off';
+      input.placeholder = '未填';
+      input.dataset.priceId = item.id;
+      input.setAttribute('aria-label', `${item.name_zh} 参考价`);
+      const saved = state.prices[item.id];
+      input.value = Number.isFinite(saved) ? formatPrice(saved) : '';
+      input.addEventListener('input', () => {
+        const text = input.value.trim();
+        if (text === '') return;
+        const n = Number(text);
+        if (!Number.isFinite(n) || n < 0) return;
+        state.prices[item.id] = Math.round(n * 100) / 100;
+        paintLedger();
+        saveState();
+      });
+      input.addEventListener('blur', () => commitItemPrice(input));
+      label.append(name, input);
+      list.append(label);
+    }
+    root.append(head, list);
+  }
 }
 
 async function main() {
@@ -568,11 +705,14 @@ async function main() {
   paintLedger();
   renderPreview();
   renderContents();
+  renderPriceBook();
   bind();
   window.__case = {
     ready: true,
     uiColor,
     GOLD,
+    debug,
+    forceTier,
     get lastDrop() { return lastDrop; },
   };
 }

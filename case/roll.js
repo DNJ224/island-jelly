@@ -109,6 +109,23 @@ export function rollPhase() {
   return pickWeighted(PHASES, PHASE_BASIS);
 }
 
+const FILLER_TIERS = TIERS.filter((tier) => tier.id !== 'rare_special');
+export const FILLER_BASIS = FILLER_TIERS.reduce((sum, tier) => sum + tier.weight, 0);
+
+export function parsePrice(raw, fallback) {
+  const text = String(raw ?? '').trim();
+  if (text === '') return fallback;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.round(n * 100) / 100;
+}
+
+// Fillers never roll the gold slot. A gold card appears only when it is the winner.
+export function rollFiller(cat) {
+  const tier = pickWeighted(FILLER_TIERS, FILLER_BASIS);
+  return rollDrop(cat, { forceTier: tier.id });
+}
+
 export function rollDrop(cat, opts = {}) {
   const forcedId = opts.forceTier ? (FORCE[opts.forceTier] || opts.forceTier) : null;
   const tier = (forcedId && TIERS.find((entry) => entry.id === forcedId)) || pickWeighted(TIERS, TIER_BASIS);
@@ -142,17 +159,24 @@ export function rollDrop(cat, opts = {}) {
 export function displayName(drop) {
   const zhPhase = drop.phase ? `（${drop.phase.zh}）` : '';
   const enPhase = drop.phase ? ` (${drop.phase.en})` : '';
-  const prefix = drop.stattrak ? 'StatTrak™ ' : '';
-  return {
-    zh: `${prefix}${drop.item.name_zh}${zhPhase}`,
-    en: `${prefix}${drop.item.name_en}${enPhase}`,
-  };
+  let zh = drop.item.name_zh;
+  let en = drop.item.name_en;
+  if (drop.stattrak) {
+    if (drop.tier === 'rare_special') {
+      zh = zh.includes('（★）') ? zh.replace('（★）', '（★ StatTrak™）') : `StatTrak™ ${zh}`;
+      en = en.startsWith('★ ') ? `★ StatTrak™ ${en.slice(2)}` : `StatTrak™ ${en}`;
+    } else {
+      zh = `StatTrak™ ${zh}`;
+      en = `StatTrak™ ${en}`;
+    }
+  }
+  return { zh: `${zh}${zhPhase}`, en: `${en}${enPhase}` };
 }
 
 export function buildReel(cat, winner, length = 64, winnerAt = 54) {
   const reel = new Array(length);
   for (let i = 0; i < length; i += 1) {
-    reel[i] = i === winnerAt ? winner : rollDrop(cat);
+    reel[i] = i === winnerAt ? winner : rollFiller(cat);
   }
   return reel;
 }

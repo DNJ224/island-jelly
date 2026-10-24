@@ -9,9 +9,13 @@ import {
   STATTRAK_WEIGHT,
   TIER_BASIS,
   TIERS,
+  FILLER_BASIS,
   buildReel,
+  displayName,
+  parsePrice,
   prepare,
   rollDrop,
+  rollFiller,
   rollPhase,
   uiColor,
   wearOf,
@@ -156,10 +160,51 @@ for (const drop of reel) {
   if (drop.tier === 'rare_special') assert.equal(drop.color, '#e4ae39');
 }
 
+const ak = guns.find((item) => item.name_en === 'AK-47 | Nightwish');
+assert.equal(displayName({ item: ak, tier: 'covert', stattrak: false, phase: null }).zh, 'AK-47 | 夜愿');
+assert.equal(displayName({ item: ak, tier: 'covert', stattrak: true, phase: null }).zh, 'StatTrak™ AK-47 | 夜愿');
+assert.equal(displayName({ item: ak, tier: 'covert', stattrak: true, phase: null }).en, 'StatTrak™ AK-47 | Nightwish');
+const bowie = knives.find((item) => item.name_en === '★ Bowie Knife | Gamma Doppler');
+const phase = { zh: '相位 2', en: 'Phase 2' };
+assert.equal(
+  displayName({ item: bowie, tier: 'rare_special', stattrak: true, phase }).en,
+  '★ StatTrak™ Bowie Knife | Gamma Doppler (Phase 2)',
+);
+assert.equal(
+  displayName({ item: bowie, tier: 'rare_special', stattrak: true, phase }).zh,
+  '鲍伊猎刀（★ StatTrak™） | 伽玛多普勒（相位 2）',
+);
+assert.equal(displayName({ item: bowie, tier: 'rare_special', stattrak: false, phase: null }).zh, '鲍伊猎刀（★） | 伽玛多普勒');
+
+assert.equal(parsePrice('', 17), 17);
+assert.equal(parsePrice('0', 17), 0);
+assert.equal(parsePrice('0.00', 17), 0);
+assert.equal(parsePrice('abc', 9), 9);
+assert.equal(parsePrice(' 5.5 ', 0), 5.5);
+assert.equal(parsePrice('-1', 3), 3);
+assert.equal(FILLER_BASIS, 9974);
+
+const goldWinner = rollDrop(cat, { forceTier: 'gold' });
+const goldReel = buildReel(cat, goldWinner, 48, 30);
+assert.equal(goldReel[30], goldWinner);
+assert.equal(goldReel.filter((drop) => drop.tier === 'rare_special').length, 1);
+const blueWinner = rollDrop(cat, { forceTier: 'milspec' });
+const blueReel = buildReel(cat, blueWinner, 48, 30);
+assert.equal(blueReel.filter((drop) => drop.tier === 'rare_special').length, 0);
+
 function assertRate(name, got, expected, n) {
   const sd = Math.sqrt(expected * (1 - expected) / n);
   const diff = Math.abs(got - expected);
   assert.ok(diff < 6 * sd, `${name}: got ${got} expected ${expected} diff ${diff} sd ${sd}`);
+}
+
+const fillerN = 100_000;
+const fillerCounts = Object.fromEntries(TIERS.map((tier) => [tier.id, 0]));
+for (let i = 0; i < fillerN; i += 1) fillerCounts[rollFiller(cat).tier] += 1;
+assert.equal(fillerCounts.rare_special, 0);
+for (const tier of TIERS) {
+  if (tier.id === 'rare_special') continue;
+  assertRate(`filler ${tier.id}`, fillerCounts[tier.id] / fillerN, tier.weight / FILLER_BASIS, fillerN);
 }
 
 const N = 1_000_000;
