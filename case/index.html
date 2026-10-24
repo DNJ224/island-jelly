@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c0e12">
+  <title>梦魇武器箱</title>
+  <link rel="icon" href="images/case_dreams_nightmares.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <img id="case-img" alt="" width="42" height="42">
+        <div>
+          <h1>梦魇武器箱</h1>
+          <p>Dreams &amp; Nightmares Case</p>
+        </div>
+      </div>
+      <div class="tools">
+        <button type="button" id="btn-ledger" aria-haspopup="dialog">账本</button>
+        <button type="button" id="btn-contents" aria-haspopup="dialog">内容</button>
+        <button type="button" id="btn-fast" aria-pressed="false">快速</button>
+        <button type="button" id="btn-sound" aria-pressed="true">声音</button>
+      </div>
+    </header>
+
+    <section id="preview">
+      <div class="preview-h">
+        <h2>包含以下物品之一</h2>
+        <button type="button" id="btn-inspect">检视物品</button>
+      </div>
+      <p class="fine pad" id="odds-note"></p>
+      <div id="grid" class="grid"></div>
+      <div class="open-bar">
+        <button type="button" id="open">开启武器箱</button>
+        <p class="fine center">模拟开箱，不消耗真实钥匙 · <a class="home-link" href="../">果冻海岛</a></p>
+      </div>
+    </section>
+
+    <section id="stage" hidden>
+      <div class="rays" aria-hidden="true"></div>
+      <div class="flash" aria-hidden="true"></div>
+      <div class="reel-wrap">
+        <div class="reel-window">
+          <div id="reel" class="reel"></div>
+        </div>
+        <div class="marker" aria-hidden="true">
+          <span class="tri top"></span>
+          <span class="line"></span>
+          <span class="tri bot"></span>
+        </div>
+      </div>
+      <div id="reveal" hidden>
+        <div class="glow" aria-hidden="true"></div>
+        <img id="reveal-img" alt="">
+        <p id="reveal-fallback" class="fname" hidden></p>
+        <p id="reveal-st" hidden>StatTrak™</p>
+        <p id="reveal-tier"></p>
+        <h2 id="reveal-zh"></h2>
+        <p id="reveal-en" class="en"></p>
+        <p id="reveal-wear"></p>
+        <p id="reveal-float" class="mono"></p>
+        <div class="floatbar" aria-hidden="true">
+          <span class="fn"></span>
+          <span class="mw"></span>
+          <span class="ft"></span>
+          <span class="ww"></span>
+          <span class="bs"></span>
+          <i id="float-pin"></i>
+        </div>
+        <p id="reveal-range" class="fine"></p>
+      </div>
+      <div class="stage-actions">
+        <button type="button" id="again" hidden>再开一个</button>
+        <button type="button" id="back" hidden>返回</button>
+      </div>
+    </section>
+  </div>
+
+  <p id="live" class="sr" aria-live="polite"></p>
+
+  <dialog id="contents-dlg">
+    <div class="sheet">
+      <div class="sheet-h">
+        <h2>箱子内容</h2>
+        <button type="button" id="contents-close" class="ghost">关闭</button>
+      </div>
+      <div id="contents-body"></div>
+    </div>
+  </dialog>
+
+  <dialog id="ledger-dlg">
+    <div class="sheet">
+      <div class="sheet-h">
+        <h2>概率账本</h2>
+        <button type="button" id="ledger-close" class="ghost">关闭</button>
+      </div>
+      <div class="stats">
+        <div><span>已开箱</span><strong id="stat-opens">0</strong></div>
+        <div><span>累计花费</span><strong id="stat-spent">¥0.00</strong></div>
+        <div><span>回收价值</span><strong id="stat-recovered">¥0.00</strong></div>
+        <div><span>净亏</span><strong id="stat-net">¥0.00</strong></div>
+        <div><span>出金次数</span><strong id="stat-golds">0</strong></div>
+        <div><span>首次出金</span><strong id="stat-gold">尚未开出</strong></div>
+      </div>
+      <div class="prices">
+        <label>
+          <span class="price-k">钥匙 <b>¥17.00</b></span>
+          <input id="key-price" type="number" min="0" step="0.01" inputmode="decimal" value="17" autocomplete="off">
+          <small>2026-10-24 21:53 UTC+8 · 游戏内商店标价，不可交易 · <a href="https://skinsniper.com/zh/cs2-store" rel="noreferrer">skinsniper.com/zh/cs2-store</a></small>
+        </label>
+        <label>
+          <span class="price-k">箱子 <b>¥5.50</b></span>
+          <input id="case-price" type="number" min="0" step="0.01" inputmode="decimal" value="5.5" autocomplete="off">
+          <small>2026-10-24 21:53 UTC+8 · BUFF 近期成交 · <a href="https://buff.163.com/goods/886606" rel="noreferrer">buff.163.com/goods/886606</a></small>
+        </label>
+      </div>
+      <p class="fine note">Steam 市场约 ¥8.47（2026-10-24 21:53 UTC+8，<a href="https://steamcommunity.com/market/priceoverview/?appid=730&amp;currency=23&amp;market_hash_name=Dreams%20%26%20Nightmares%20Case" rel="noreferrer">Steam 市场</a>）。两项都可以改。单次花费在开启时计入，之后改价不会改写已经花掉的金额。空着失焦会回到上一次的数字，0 会按 0 计算。</p>
+      <p class="fine" id="next-cost"></p>
+      <p class="fine" id="expect-cost"></p>
+      <h3>物品参考价</h3>
+      <p class="fine note">默认留空，不计入回收。填上之后按这个参考价乘以已开出的件数重算。0 表示这件按 0 计。</p>
+      <div id="price-book"></div>
+      <h3>最近掉落</h3>
+      <ol id="history" class="history"></ol>
+      <button type="button" id="clear-ledger">清空账本</button>
+    </div>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
