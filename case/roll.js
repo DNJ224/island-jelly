@@ -14,6 +14,57 @@ export const TIERS = [
 
 export const TIER_BASIS = 10000;
 
+// Fun-mode defaults, in percent. Non-gold tiers scale by (100 - gold) / 95.
+export const FUN_DEFAULTS = {
+  rare_special: 5,
+  covert: 10,
+  classified: 20,
+  restricted: 30,
+  milspec: 35,
+};
+export const FUN_BASIS = 19000;
+
+export function snapGoldRate(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return FUN_DEFAULTS.rare_special;
+  const snapped = Math.round(n * 2) / 2;
+  if (snapped < 1) return 1;
+  if (snapped > 50) return 50;
+  return snapped;
+}
+
+// Integer weights. gold is in 0.5% steps, and the five weights always sum to FUN_BASIS.
+export function funBreakdown(goldPercent = FUN_DEFAULTS.rare_special) {
+  const rate = snapGoldRate(goldPercent);
+  const halves = Math.round(rate * 2);
+  const rest = 200 - halves;
+  const weights = {
+    rare_special: halves * 95,
+    covert: FUN_DEFAULTS.covert * rest,
+    classified: FUN_DEFAULTS.classified * rest,
+    restricted: FUN_DEFAULTS.restricted * rest,
+    milspec: FUN_DEFAULTS.milspec * rest,
+  };
+  const percents = {};
+  for (const id of Object.keys(weights)) percents[id] = (weights[id] / FUN_BASIS) * 100;
+  return { rate, weights, basis: FUN_BASIS, percents };
+}
+
+export function displayPercents(breakdown) {
+  const order = ['rare_special', 'covert', 'classified', 'restricted', 'milspec'];
+  const shown = {};
+  let used = 0;
+  for (const id of order) {
+    if (id === 'milspec') {
+      shown[id] = Math.round((100 - used) * 100) / 100;
+    } else {
+      shown[id] = Math.round(breakdown.percents[id] * 100) / 100;
+      used += shown[id];
+    }
+  }
+  return shown;
+}
+
 export const PHASES = [
   { id: 'p1', en: 'Phase 1', zh: '相位 1', weight: 2375 },
   { id: 'p2', en: 'Phase 2', zh: '相位 2', weight: 2375 },
@@ -121,14 +172,27 @@ export function parsePrice(raw, fallback) {
 }
 
 // Fillers never roll the gold slot. A gold card appears only when it is the winner.
-export function rollFiller(cat) {
-  const tier = pickWeighted(FILLER_TIERS, FILLER_BASIS);
+function tierTable(opts = {}) {
+  if (!opts.fun) return { entries: TIERS, basis: TIER_BASIS };
+  const breakdown = funBreakdown(opts.goldPercent);
+  return {
+    entries: TIERS.map((tier) => ({ ...tier, weight: breakdown.weights[tier.id] })),
+    basis: breakdown.basis,
+  };
+}
+
+export function rollFiller(cat, opts = {}) {
+  const table = tierTable(opts);
+  const entries = table.entries.filter((tier) => tier.id !== 'rare_special');
+  const basis = entries.reduce((sum, tier) => sum + tier.weight, 0);
+  const tier = pickWeighted(entries, basis);
   return rollDrop(cat, { forceTier: tier.id });
 }
 
 export function rollDrop(cat, opts = {}) {
+  const table = tierTable(opts);
   const forcedId = opts.forceTier ? (FORCE[opts.forceTier] || opts.forceTier) : null;
-  const tier = (forcedId && TIERS.find((entry) => entry.id === forcedId)) || pickWeighted(TIERS, TIER_BASIS);
+  const tier = (forcedId && table.entries.find((entry) => entry.id === forcedId)) || pickWeighted(table.entries, table.basis);
   const list = cat.byTier[tier.id];
   const item = list[randomBelow(list.length)];
   const stattrak = randomBelow(TIER_BASIS) < STATTRAK_WEIGHT;
@@ -173,20 +237,20 @@ export function displayName(drop) {
   return { zh: `${zh}${zhPhase}`, en: `${en}${enPhase}` };
 }
 
-export function buildReel(cat, winner, length = 64, winnerAt = 54) {
+export function buildReel(cat, winner, length = 64, winnerAt = 54, opts = {}) {
   const reel = new Array(length);
   for (let i = 0; i < length; i += 1) {
-    reel[i] = i === winnerAt ? winner : rollFiller(cat);
+    reel[i] = i === winnerAt ? winner : rollFiller(cat, opts);
   }
   return reel;
 }
 
-export function eachPercent(tierId, count) {
-  const tier = TIERS.find((entry) => entry.id === tierId);
-  return (tier.weight / TIER_BASIS / count) * 100;
-}
-
-export function tierPercent(tierId) {
+export function tierPercent(tierId, table) {
+  if (table && table.percents) return table.percents[tierId];
   const tier = TIERS.find((entry) => entry.id === tierId);
   return (tier.weight / TIER_BASIS) * 100;
+}
+
+export function eachPercent(tierId, count, table) {
+  return tierPercent(tierId, table) / count;
 }

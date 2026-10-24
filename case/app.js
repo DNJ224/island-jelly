@@ -8,17 +8,22 @@ import {
   WINNER_AT,
   ease,
 } from './timing.js';
+import { blankLedger, recordDrop, recoveredOf, resetCurrent, splitLedgers } from './ledger.js';
+import { PRICE_SOURCE, lookupQuote } from './prices.js';
 import {
   GOLD,
   TIERS,
   PHASES,
   buildReel,
   displayName,
+  displayPercents,
   eachPercent,
+  funBreakdown,
   prepare,
   randomUnit,
   parsePrice,
   rollDrop,
+  snapGoldRate,
   tierPercent,
   uiColor,
 } from './roll.js';
@@ -37,6 +42,7 @@ const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').match
 
 let cat = null;
 let manifest = null;
+let priceDoc = null;
 let busy = false;
 let skipFlag = false;
 let fast = params.get('fast') === '1' || reduceMotion;
@@ -45,40 +51,44 @@ let state = loadState();
 
 function loadState() {
   const blank = {
-    opens: 0,
-    spent: 0,
-    firstGoldAt: null,
-    goldCount: 0,
-    counts: {},
-    prices: {},
-    history: [],
     key: 17,
     casePrice: 5.5,
     sound: true,
+    prices: {},
+    fun: false,
+    goldRate: 5,
+    real: blankLedger(),
+    funLedger: blankLedger(),
   };
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return blank;
     const saved = JSON.parse(raw);
-    const history = Array.isArray(saved.history) ? saved.history : [];
-    const state = {
-      ...blank,
-      ...saved,
-      history,
-      counts: saved.counts && typeof saved.counts === 'object' && !Array.isArray(saved.counts) ? saved.counts : {},
-      prices: saved.prices && typeof saved.prices === 'object' && !Array.isArray(saved.prices) ? saved.prices : {},
+    const ledgers = splitLedgers(saved);
+    const prices = saved.prices && typeof saved.prices === 'object' && !Array.isArray(saved.prices) ? saved.prices : {};
+    let key = Number(saved.key);
+    let casePrice = Number(saved.casePrice);
+    if (!Number.isFinite(key) || key < 0) key = blank.key;
+    if (!Number.isFinite(casePrice) || casePrice < 0) casePrice = blank.casePrice;
+    return {
+      key,
+      casePrice,
+      sound: saved.sound !== false,
+      prices,
+      ...ledgers,
     };
-    if (!Number.isFinite(state.key) || state.key < 0) state.key = blank.key;
-    if (!Number.isFinite(state.casePrice) || state.casePrice < 0) state.casePrice = blank.casePrice;
-    if (saved.goldCount == null || !Number.isFinite(Number(saved.goldCount))) {
-      state.goldCount = history.filter((row) => row.tier === 'rare_special').length;
-    } else {
-      state.goldCount = Number(saved.goldCount);
-    }
-    return state;
   } catch {
     return blank;
   }
+}
+
+function ledger() {
+  return state.fun ? state.funLedger : state.real;
+}
+
+function setLedger(next) {
+  if (state.fun) state.funLedger = next;
+  else state.real = next;
 }
 
 function saveState() {
@@ -99,12 +109,31 @@ function formatPrice(n) {
 }
 
 function recoveredValue() {
-  let sum = 0;
-  for (const [id, count] of Object.entries(state.counts)) {
-    const price = state.prices[id];
-    if (Number.isFinite(price) && count) sum += price * count;
+  return recoveredOf(ledger());
+}
+
+function quoteFor(drop) {
+  if (!priceDoc || !drop) return null;
+  return lookupQuote(priceDoc, drop.item.id, drop.wear.id, drop.stattrak, drop.phase);
+}
+
+function rollOpts(extra = {}) {
+  const opts = { ...extra };
+  if (state.fun) {
+    opts.fun = true;
+    opts.goldPercent = state.goldRate;
   }
-  return sum;
+  if (forceTier) opts.forceTier = forceTier;
+  return opts;
+}
+
+function activeTable() {
+  return state.fun ? funBreakdown(state.goldRate) : null;
+}
+
+function formatNum(value) {
+  const rounded = Math.round(value * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
 }
 
 function esc(value) {
@@ -126,6 +155,11 @@ function fmtPct(value) {
 function paintCostNotes() {
   const cost = state.key + state.casePrice;
   $('next-cost').textContent = `下一次开启计入 ${yuan(cost)}（钥匙 + 箱子）。`;
+  if (state.fun) {
+    const opens = 100 / state.goldRate;
+    $('expect-cost').textContent = `娱乐模式，非真实概率。金色 ${formatNum(state.goldRate)}% ≈ ${formatNum(opens)} 次开到一把刀。期望花费 ${formatNum(opens)} × ${yuan(cost)} = ${yuan(opens * cost)}。`;
+    return;
+  }
   $('expect-cost').textContent = `金色 0.26% ≈ ${EXPECT_OPENS} 次开到一把刀。期望花费 ${EXPECT_OPENS} × ${yuan(cost)} = ${yuan(EXPECT_OPENS * cost)}。对照流浪者匕首 ${yuan(NOMAD_YUAN)}，BUFF 参考价，2026-10-24。`;
 }
 
@@ -135,24 +169,32 @@ function paintPrices() {
   paintCostNotes();
 }
 
+function paintReturn(spent, recovered) {
+  $('stat-return').textContent = spent > 0 ? `${((recovered / spent) * 100).toFixed(1)}%` : '—';
+}
+
 function paintLedger() {
+  const book = ledger();
   const recovered = recoveredValue();
-  $('stat-opens').textContent = String(state.opens);
-  $('stat-spent').textContent = yuan(state.spent);
+  $('stat-opens').textContent = String(book.opens);
+  $('stat-spent').textContent = yuan(book.spent);
   $('stat-recovered').textContent = yuan(recovered);
-  $('stat-net').textContent = yuan(state.spent - recovered);
-  $('stat-golds').textContent = String(state.goldCount);
-  $('stat-gold').textContent = state.firstGoldAt == null ? '尚未开出' : `第 ${state.firstGoldAt} 次`;
+  $('stat-net').textContent = yuan(book.spent - recovered);
+  paintReturn(book.spent, recovered);
+  $('stat-golds').textContent = String(book.goldCount);
+  $('stat-gold').textContent = book.firstGoldAt == null ? '尚未开出' : `第 ${book.firstGoldAt} 次`;
+  $('ledger-mode').textContent = state.fun ? '当前：娱乐模式' : '当前：真实模式';
+  $('fun-badge-ledger').hidden = !state.fun;
   const list = $('history');
   list.replaceChildren();
-  if (!state.history.length) {
+  if (!book.history.length) {
     const empty = document.createElement('li');
     empty.className = 'fine';
     empty.textContent = '还没有开箱';
     list.append(empty);
     return;
   }
-  state.history.slice(0, 40).forEach((row, index) => {
+  book.history.slice(0, 40).forEach((row, index) => {
     const li = document.createElement('li');
     li.className = index === 0 ? 'hrow latest' : 'hrow';
     const swatch = document.createElement('i');
@@ -165,6 +207,15 @@ function paintLedger() {
     name.textContent = row.zh;
     const meta = document.createElement('small');
     meta.textContent = `${row.wear} · ${row.floatText}`;
+    if (Number.isFinite(row.value)) {
+      meta.append(document.createTextNode(` · ${yuan(row.value)}`));
+      if (row.estimated) {
+        const mark = document.createElement('span');
+        mark.className = 'est';
+        mark.textContent = '估';
+        meta.append(mark);
+      }
+    }
     text.append(name, meta);
     li.append(swatch, text);
     list.append(li);
@@ -174,22 +225,18 @@ function paintLedger() {
 function record(drop) {
   const names = displayName(drop);
   const cost = state.key + state.casePrice;
-  state.opens += 1;
-  state.spent += cost;
-  if (drop.tier === 'rare_special') {
-    state.goldCount += 1;
-    if (state.firstGoldAt == null) state.firstGoldAt = state.opens;
-  }
-  state.counts[drop.item.id] = (state.counts[drop.item.id] || 0) + 1;
-  state.history.unshift({
+  const quote = quoteFor(drop);
+  setLedger(recordDrop(ledger(), {
     itemId: drop.item.id,
-    color: drop.color,
     tier: drop.tier,
+    color: drop.color,
     zh: names.zh,
     wear: drop.wear.zh,
     floatText: drop.floatValue.toFixed(4),
-  });
-  if (state.history.length > 200) state.history.length = 200;
+    cost,
+    value: quote ? quote.value : null,
+    estimated: Boolean(quote && quote.estimated),
+  }));
   saveState();
   paintLedger();
 }
@@ -197,6 +244,39 @@ function record(drop) {
 function skinZh(item) {
   const parts = item.name_zh.split(' | ');
   return parts.length > 1 ? parts.slice(1).join(' | ') : '';
+}
+
+function paintOddsNote() {
+  const shared = 'StatTrak™ 10% 为常见说法，未核实。伽玛多普勒相位（相位 1–4 各 23.75%，绿宝石 5%）为社区估算，非官方。磨损在范围内均匀分布，简化处理。';
+  if (!state.fun) {
+    $('odds-note').textContent = `品级概率为 Valve 公布（二手来源）：稀有特殊 0.26%、隐秘 0.64%、保密 3.20%、受限 15.98%、军规级 79.92%。${shared}`;
+    return;
+  }
+  const shown = displayPercents(funBreakdown(state.goldRate));
+  const bits = [
+    ['稀有特殊', shown.rare_special],
+    ['隐秘', shown.covert],
+    ['保密', shown.classified],
+    ['受限', shown.restricted],
+    ['军规级', shown.milspec],
+  ];
+  const line = bits.map(([label, value]) => `${label} ${value.toFixed(2)}%`).join('、');
+  $('odds-note').textContent = `娱乐模式，非真实概率。当前品级：${line}。${shared}`;
+}
+
+function paintMode() {
+  $('mode-real').setAttribute('aria-pressed', state.fun ? 'false' : 'true');
+  $('mode-fun').setAttribute('aria-pressed', state.fun ? 'true' : 'false');
+  $('fun-controls').hidden = !state.fun;
+  $('gold-rate').value = String(state.goldRate);
+  const rateText = Number.isInteger(state.goldRate) ? String(state.goldRate) : state.goldRate.toFixed(1);
+  $('gold-rate-label').textContent = `${rateText}%`;
+  const shown = displayPercents(funBreakdown(state.goldRate));
+  $('fun-percents').textContent = `隐秘 ${shown.covert.toFixed(2)}% · 保密 ${shown.classified.toFixed(2)}% · 受限 ${shown.restricted.toFixed(2)}% · 军规级 ${shown.milspec.toFixed(2)}%`;
+  for (const id of ['fun-badge-open', 'fun-badge-stage', 'fun-badge-ledger']) $(id).hidden = !state.fun;
+  paintOddsNote();
+  paintCostNotes();
+  if (manifest) renderContents();
 }
 
 function renderPreview() {
@@ -228,7 +308,7 @@ function renderPreview() {
     skin: '',
   }));
 
-  $('odds-note').textContent = '品级概率为 Valve 公布（二手来源）：稀有特殊 0.26%、隐秘 0.64%、保密 3.20%、受限 15.98%、军规级 79.92%。StatTrak™ 10% 为常见说法，未核实。伽玛多普勒相位（相位 1–4 各 23.75%，绿宝石 5%）为社区估算，非官方。磨损在范围内均匀分布，简化处理。';
+  paintOddsNote();
 }
 
 function makeTile({ kind, tier, color, image, weapon, skin }) {
@@ -266,6 +346,8 @@ function makeTile({ kind, tier, color, image, weapon, skin }) {
 
 function renderContents() {
   const root = $('contents-body');
+  root.replaceChildren();
+  const table = activeTable();
   const intro = document.createElement('p');
   intro.className = 'fine note';
   intro.textContent = '17 把枪加 30 把刀（5 种刀 × 6 款涂装）。预览里刀收在「★ 稀有特殊物品」后面，这里按开出时的条目列全，方便核对没有遗漏、也没有多出来的涂装。';
@@ -290,13 +372,17 @@ function renderContents() {
     title.textContent = tierId === 'rare_special' ? '★ 稀有特殊物品' : tier.zh;
     title.style.color = tierId === 'rare_special' ? GOLD : uiColor(items[0]);
     const meta = document.createElement('span');
-    meta.textContent = `${fmtPct(tierPercent(tierId))} · ${items.length} 件 · 每件 ${fmtPct(eachPercent(tierId, items.length))}`;
+    meta.textContent = `${fmtPct(tierPercent(tierId, table))} · ${items.length} 件 · 每件 ${fmtPct(eachPercent(tierId, items.length, table))}`;
     head.append(title, meta);
     root.append(head);
 
     const note = document.createElement('p');
     note.className = 'fine note';
-    if (tierId === 'rare_special') {
+    if (state.fun && tierId === 'rare_special') {
+      note.textContent = '娱乐模式，非真实概率。刀和涂装在金色里均匀抽取。伽玛多普勒开出后再掷相位：相位 1–4 各 23.75%，绿宝石 5%，社区估算，非官方。不含幻彩 2 号的多普勒、大理石渐变、虎牙等。开箱界面里刀显示为金色，而不是物品自身的隐秘红。';
+    } else if (state.fun) {
+      note.textContent = '娱乐模式，非真实概率。同品级内均匀抽取。';
+    } else if (tierId === 'rare_special') {
       note.textContent = '品级概率为 Valve 公布（二手来源）。刀和涂装在金色里均匀抽取。伽玛多普勒开出后再掷相位：相位 1–4 各 23.75%，绿宝石 5%，社区估算，非官方。不含幻彩 2 号的多普勒、大理石渐变、虎牙等。开箱界面里刀显示为金色，而不是物品自身的隐秘红。';
     } else {
       note.textContent = '品级概率为 Valve 公布（二手来源）。同品级内均匀抽取。';
@@ -322,7 +408,7 @@ function renderContents() {
       text.append(name, sub);
       const odds = document.createElement('span');
       odds.className = 'odds';
-      odds.textContent = fmtPct(eachPercent(tierId, items.length));
+      odds.textContent = fmtPct(eachPercent(tierId, items.length, table));
       row.append(dot, text, odds);
       root.append(row);
     }
@@ -426,6 +512,7 @@ function showReveal(drop) {
   $('reveal-zh').style.color = gold ? GOLD : '#f4f1ea';
   paintName($('reveal-en'), names.en);
   $('reveal-wear').textContent = `${drop.wear.zh} · ${drop.wear.en}`;
+  paintQuote($('reveal-price'), quoteFor(drop));
   $('reveal-float').textContent = drop.floatValue.toFixed(8);
   $('float-pin').style.left = `${Math.min(100, Math.max(0, drop.floatValue * 100))}%`;
   $('reveal-range').textContent = `磨损区间 ${drop.item.float_min.toFixed(2)} – ${drop.item.float_max.toFixed(2)}`;
@@ -433,6 +520,18 @@ function showReveal(drop) {
   $('back').hidden = false;
   $('live').textContent = names.zh;
   if (!audio.muted) audio.reveal(drop.tier);
+}
+
+function paintQuote(el, quote) {
+  el.replaceChildren();
+  if (!quote) return;
+  el.append(document.createTextNode(yuan(quote.value)));
+  if (quote.estimated) {
+    const mark = document.createElement('span');
+    mark.className = 'est';
+    mark.textContent = '估';
+    el.append(mark);
+  }
 }
 
 function focusWinner() {
@@ -523,13 +622,13 @@ async function openCase() {
   $('open').textContent = '开启中…';
   audio.arm();
   try {
-    const drop = rollDrop(cat, forceTier ? { forceTier } : {});
+    const drop = rollDrop(cat, rollOpts());
     lastDrop = drop;
     showStage();
     const reel = $('reel');
     reel.replaceChildren();
     reel.style.filter = 'none';
-    const built = buildReel(cat, drop, REEL_LEN, WINNER_AT);
+    const built = buildReel(cat, drop, REEL_LEN, WINNER_AT, rollOpts());
     for (const entry of built) reel.append(makeCard(entry));
     $('live').textContent = '正在开启';
 
@@ -615,14 +714,29 @@ function bind() {
       saveState();
     });
   }
-  $('clear-ledger').addEventListener('click', () => {
-    if (!window.confirm('清空开箱记录？')) return;
-    state.opens = 0;
-    state.spent = 0;
-    state.firstGoldAt = null;
-    state.goldCount = 0;
-    state.counts = {};
-    state.history = [];
+  $('mode-real').addEventListener('click', () => {
+    if (!state.fun) return;
+    state.fun = false;
+    saveState();
+    paintMode();
+    paintLedger();
+  });
+  $('mode-fun').addEventListener('click', () => {
+    if (state.fun) return;
+    state.fun = true;
+    saveState();
+    paintMode();
+    paintLedger();
+  });
+  $('gold-rate').addEventListener('input', () => {
+    state.goldRate = snapGoldRate($('gold-rate').value);
+    state.fun = true;
+    saveState();
+    paintMode();
+  });
+  $('reset-ledger').addEventListener('click', () => {
+    if (!window.confirm('重置当前账本？')) return;
+    state = resetCurrent(state);
     saveState();
     paintLedger();
   });
@@ -694,9 +808,14 @@ function renderPriceBook() {
 }
 
 async function main() {
-  const response = await fetch(new URL('./manifest.json', import.meta.url));
-  if (!response.ok) throw new Error('manifest');
+  const [response, priceResponse] = await Promise.all([
+    fetch(new URL('./manifest.json', import.meta.url)),
+    fetch(new URL('./prices.json', import.meta.url)),
+  ]);
+  if (!response.ok || !priceResponse.ok) throw new Error('manifest');
   manifest = await response.json();
+  priceDoc = await priceResponse.json();
+  if (priceDoc.source !== PRICE_SOURCE) throw new Error('price source');
   cat = prepare(manifest);
   if (state.sound === false) setSound(false);
   else setSound(true);
@@ -704,8 +823,8 @@ async function main() {
   paintPrices();
   paintLedger();
   renderPreview();
-  renderContents();
   renderPriceBook();
+  paintMode();
   bind();
   window.__case = {
     ready: true,
@@ -718,6 +837,8 @@ async function main() {
     reelLen: REEL_LEN,
     winnerAt: WINNER_AT,
     startAt: START_AT,
+    get fun() { return state.fun; },
+    get goldRate() { return state.goldRate; },
     get lastDrop() { return lastDrop; },
   };
 }
