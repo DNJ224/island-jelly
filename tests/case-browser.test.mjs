@@ -341,7 +341,9 @@ await funPage.click('#btn-fast');
 await funPage.click('#open');
 await funPage.waitForFunction(() => {
   const reveal = document.getElementById('reveal');
-  return reveal && !reveal.hidden && document.getElementById('reveal-price').textContent.includes('¥');
+  const price = document.getElementById('reveal-price').textContent;
+  const pl = document.getElementById('reveal-pl').textContent;
+  return reveal && !reveal.hidden && price === '价格未知' && pl === '本次盈亏 —';
 }, null, { timeout: 12000 });
 await funPage.click('#back');
 await funPage.click('#mode-fun');
@@ -373,7 +375,9 @@ await funPage.click('#open');
 await funPage.waitForFunction(() => {
   const reveal = document.getElementById('reveal');
   const badge = document.getElementById('fun-badge-stage');
-  return reveal && !reveal.hidden && badge && badge.hidden === false && document.getElementById('reveal-price').textContent.includes('¥');
+  const price = document.getElementById('reveal-price').textContent;
+  const pl = document.getElementById('reveal-pl').textContent;
+  return reveal && !reveal.hidden && badge && badge.hidden === false && price === '价格未知' && pl === '本次盈亏 —';
 }, null, { timeout: 12000 });
 await funPage.click('#back');
 await funPage.click('#btn-ledger');
@@ -383,8 +387,12 @@ const funLedger = await funPage.evaluate(() => ({
   resetH: document.getElementById('reset-ledger').getBoundingClientRect().height,
   opens: document.getElementById('stat-opens').textContent,
   rate: document.getElementById('stat-return').textContent,
+  unknown: document.getElementById('stat-unknown').textContent,
+  value: document.getElementById('stat-recovered').textContent,
+  spent: document.getElementById('stat-spent').textContent,
+  net: document.getElementById('stat-net').textContent,
 }));
-check('fun ledger shows this mode only', funLedger.opens === '1' && funLedger.rate !== '—' && funLedger.text.includes('非真实概率') && funLedger.text.includes('当前：娱乐模式') && funLedger.text.includes('参考价：BUFF 在售最低价（csgotrader 数据，2026-10-24）') && funLedger.resetH >= 44, JSON.stringify({ opens: funLedger.opens, rate: funLedger.rate, resetH: funLedger.resetH }));
+check('fun ledger shows this mode only', funLedger.opens === '1' && funLedger.unknown === '1' && funLedger.value === '¥0.00' && funLedger.spent === '¥22.50' && funLedger.net === '-¥22.50' && funLedger.rate === '0.0%' && funLedger.text.includes('非真实概率') && funLedger.text.includes('当前：娱乐模式') && funLedger.text.includes('未查到') && funLedger.text.includes('价格未知') && funLedger.text.includes('逐次记录') && funLedger.resetH >= 44, JSON.stringify(funLedger));
 await funPage.screenshot({ path: `${shots}/case-fun-ledger.png` });
 await funPage.click('#reset-ledger');
 const afterReset = await funPage.evaluate(() => ({
@@ -397,8 +405,12 @@ const afterReset = await funPage.evaluate(() => ({
 check('reset clears only the fun ledger', afterReset.opens === '0' && afterReset.recovered === '¥0.00' && afterReset.rate === '—' && afterReset.gold === '12.5' && afterReset.key === '17.00', JSON.stringify(afterReset));
 await funPage.click('#ledger-close');
 await funPage.click('#mode-real');
-const realKept = await funPage.evaluate(() => document.getElementById('stat-opens').textContent);
-check('real ledger survives the fun reset', realKept === '1', realKept);
+const realKept = await funPage.evaluate(() => ({
+  opens: document.getElementById('stat-opens').textContent,
+  unknown: document.getElementById('stat-unknown').textContent,
+  spent: document.getElementById('stat-spent').textContent,
+}));
+check('real ledger survives the fun reset', realKept.opens === '1' && realKept.unknown === '1' && realKept.spent === '¥22.50', JSON.stringify(realKept));
 await funPage.reload({ waitUntil: 'domcontentloaded' });
 await funPage.waitForFunction(() => window.__case && window.__case.ready, null, { timeout: 15000 });
 const persisted = await funPage.evaluate(() => ({

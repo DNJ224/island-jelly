@@ -420,12 +420,14 @@ button {
   font-size: 22px;
   line-height: 1.3;
 }
-#reveal-en, #reveal-wear, #reveal-price, #reveal-float, #reveal-range {
+#reveal-en, #reveal-wear, #reveal-price, #reveal-pl, #reveal-float, #reveal-range {
   position: relative;
   margin: 3px 0 0;
 }
-#reveal-en, #reveal-wear, #reveal-price, #reveal-float, #reveal-range, #reveal-st { width: 100%; }
-#reveal-price { font-size: 15px; font-variant-numeric: tabular-nums; }
+#reveal-en, #reveal-wear, #reveal-price, #reveal-pl, #reveal-float, #reveal-range, #reveal-st { width: 100%; }
+#reveal-price, #reveal-pl { font-size: 15px; font-variant-numeric: tabular-nums; }
+.pl-pos { color: #3dd68c; }
+.pl-neg { color: #ff5d5d; }
 #reveal-en, #reveal-range { color: var(--muted); font-size: 13px; }
 #reveal-wear { font-size: 15px; }
 .mono { font-variant-numeric: tabular-nums; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; color: #ddd8ce; }
@@ -591,15 +593,25 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.62); }
   font-size: 13px;
 }
 .ref-price span { min-width: 0; }
-.history { list-style: none; margin: 8px 0 12px; padding: 0; }
+.history {
+  list-style: none;
+  margin: 8px 0 12px;
+  padding: 0;
+  max-height: min(42vh, 360px);
+  overflow: auto;
+}
 .hrow {
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr);
+  grid-template-columns: 8px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   padding: 7px 0;
   border-bottom: 1px solid var(--line);
 }
+.hmoney { text-align: right; font-variant-numeric: tabular-nums; }
+.hmoney b, .hmoney small { display: block; }
+.hmoney b { font-size: 13px; font-weight: 650; }
+.hmoney small { font-size: 12px; }
 .swatch { width: 8px; height: 28px; border-radius: 2px; display: block; }
 .hrow b { display: block; font-size: 13px; font-weight: 600; }
 .hrow small { color: var(--muted); font-size: 11px; }

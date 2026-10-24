@@ -80,6 +80,7 @@
         <p id="reveal-en" class="en"></p>
         <p id="reveal-wear"></p>
         <p id="reveal-price"></p>
+        <p id="reveal-pl"></p>
         <p id="reveal-float" class="mono"></p>
         <div class="floatbar" aria-hidden="true">
           <span class="fn"></span>
@@ -121,13 +122,14 @@
       <div class="stats">
         <div><span>已开箱</span><strong id="stat-opens">0</strong></div>
         <div><span>累计花费</span><strong id="stat-spent">¥0.00</strong></div>
-        <div><span>回收价值</span><strong id="stat-recovered">¥0.00</strong></div>
-        <div><span>净亏</span><strong id="stat-net">¥0.00</strong></div>
+        <div><span>物品价值</span><strong id="stat-recovered">¥0.00</strong></div>
+        <div><span>净盈亏</span><strong id="stat-net">¥0.00</strong></div>
         <div><span>回本率</span><strong id="stat-return">—</strong></div>
+        <div><span>价格未知</span><strong id="stat-unknown">0</strong></div>
         <div><span>出金次数</span><strong id="stat-golds">0</strong></div>
         <div><span>首次出金</span><strong id="stat-gold">尚未开出</strong></div>
       </div>
-      <p class="fine note" id="price-source">参考价：BUFF 在售最低价（csgotrader 数据，2026-10-24）</p>
+      <p class="fine note" id="price-source"></p>
       <div class="prices">
         <label>
           <span class="price-k">钥匙 <b>¥17.00</b></span>
@@ -144,9 +146,9 @@
       <p class="fine" id="next-cost"></p>
       <p class="fine" id="expect-cost"></p>
       <h3>物品参考价</h3>
-      <p class="fine note">手填单价只留在这本账上，不改回收价值。回收价值按每次开出时的 BUFF 参考价累加，估出来的也算，并且不受最近 200 条记录的上限影响。</p>
+      <p class="fine note">手填单价不计入物品价值。物品价值只累加查到的参考价；未查到的开箱显示「价格未知」，花费仍然计入，并单独计数。合计不受下面 200 条记录上限的影响。</p>
       <div id="price-book"></div>
-      <h3>最近掉落</h3>
+      <h3>逐次记录</h3>
       <ol id="history" class="history"></ol>
       <button type="button" id="reset-ledger">一键重置</button>
     </div>
